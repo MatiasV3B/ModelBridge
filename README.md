@@ -1,4 +1,4 @@
-# Antigravity Bridge
+# Model Bridge
 
 <div align="center">
   <h3>⚡ High-Performance Local Gateway for Google Antigravity, Anthropic Claude & OpenAI Models</h3>
@@ -19,7 +19,7 @@
 
 ## 🌟 Overview
 
-**Antigravity Bridge** is an open-source, local FastAPI server that exposes industry-standard API endpoints (`/v1/chat/completions`, `/v1/responses`, `/v1/messages`, `/v1/models`, `/v1/files`). It acts as a bidirectional bridge between client applications and underlying local CLI tools or official provider APIs:
+**Model Bridge** is an open-source, local FastAPI server that exposes industry-standard API endpoints (`/v1/chat/completions`, `/v1/responses`, `/v1/messages`, `/v1/models`, `/v1/files`). It acts as a bidirectional bridge between client applications and underlying local CLI tools or official provider APIs:
 
 1. **Google Antigravity & Gemini**:
    - **Local Terminal**: Powered by the local Antigravity CLI (`agy`) and `google-antigravity` SDK.
@@ -49,7 +49,7 @@ flowchart TD
         WebUI["Open WebUI / LibreChat\n(Self-Hosted Interfaces)"]
     end
 
-    subgraph Bridge ["Antigravity Bridge (FastAPI @ http://127.0.0.1:8000)"]
+    subgraph Bridge ["Model Bridge (FastAPI @ http://127.0.0.1:8000)"]
         Router["FastAPI Router\n(/v1/chat/completions, /v1/messages, /v1/files)"]
         Engine["Bridge Engine & Telemetry\n(Model Resolution, SSE Streaming, Quota Tracking)"]
         Router <--> Engine
@@ -106,8 +106,8 @@ flowchart TD
 
 ```bash
 # Clone the repository
-git clone https://github.com/MatiasV3B/AntigravityBridge.git
-cd AntigravityBridge
+git clone https://github.com/MatiasV3B/ModelBridge.git
+cd ModelBridge
 
 # Create and activate a virtual environment
 python -m venv .venv

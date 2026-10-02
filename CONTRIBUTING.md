@@ -1,6 +1,6 @@
-# Contributing to Antigravity Bridge
+# Contributing to Model Bridge
 
-Thank you for your interest in contributing to Antigravity Bridge! We welcome contributions to expand model compatibility, improve performance, add new platform integrations, and squash bugs.
+Thank you for your interest in contributing to Model Bridge! We welcome contributions to expand model compatibility, improve performance, add new platform integrations, and squash bugs.
 
 ## How to Contribute
 
