@@ -1,0 +1,40 @@
+===========================================================
+            ⚡ ANTIGRAVITY BRIDGE PARA WINDOWS ⚡
+===========================================================
+
+¡Hola! Con esta aplicación puedes usar los agentes y modelos
+de Google Antigravity (Gemini 3.8, Claude 3.7, etc.) directamente
+en cualquier herramienta compatible con OpenAI (Cursor, Continue,
+LibreChat, Open WebUI o scripts en Python).
+
+-----------------------------------------------------------
+▶ PASO 1: INSTALAR (Solo se hace la primera vez)
+-----------------------------------------------------------
+Haz doble clic en:
+👉 Instalador-AntigravityBridge.bat
+
+Esto instalará automáticamente:
+- El CLI oficial de Antigravity (si no lo tienes)
+- Las librerías de Python necesarias
+- Creará el icono "Antigravity Bridge" en tu Escritorio
+
+-----------------------------------------------------------
+▶ PASO 2: INICIAR LA APLICACIÓN
+-----------------------------------------------------------
+Haz doble clic en el acceso directo "Antigravity Bridge" en tu
+Escritorio (o en Iniciar-AntigravityBridge.bat).
+
+Una vez abierta la ventana, presiona el botón verde:
+👉 "▶ INICIAR BRIDGE"
+
+El bridge se activará en tu computadora en:
+http://localhost:8000/v1
+
+-----------------------------------------------------------
+▶ PASO 3: CONECTARLO A TUS PROGRAMAS
+-----------------------------------------------------------
+En Cursor IDE, LibreChat, Open WebUI, AnythingLLM, etc.:
+• URL Base: http://localhost:8000/v1
+• API Key: sk-antigravity (o cualquier texto)
+• Modelo: gemini-3.8-flash-high (o claude-sonnet-4-6, gpt-4o)
+===========================================================

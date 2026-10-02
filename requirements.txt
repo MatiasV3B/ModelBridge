@@ -1,0 +1,12 @@
+fastapi>=0.115.0
+uvicorn>=0.30.0
+customtkinter>=5.2.0
+requests>=2.31.0
+python-multipart>=0.0.9
+pydantic>=2.7.0
+pillow>=10.0.0
+darkdetect>=0.8.0
+google-antigravity>=0.1.16
+pystray>=0.19.5
+
+anthropic>=0.40.0
