@@ -33,8 +33,8 @@
    - **Local Terminal**: Local CLI execution via Codex CLI environment.
    - **ChatGPT API**: Direct connection using OpenAI API Key.
    - *Models*: GPT-6 Astra, GPT-6 Sol, GPT-6 Luna, GPT-5.6 Terra, GPT-5.6 Sol, GPT-5.6 Luna.
-4. **Open-Source Weights (GPT-OSS 120B)**:
-   - Local terminal execution via local bridge / open-weights inference (strictly isolated from Gemini API).
+4. **GPT-OSS 120B**:
+   - Local terminal execution or direct execution via OpenAI API (strictly isolated from Gemini API).
 
 ---
 
@@ -60,7 +60,7 @@ flowchart TD
             AgyCLI["Google Antigravity CLI (agy)"]
             ClaudeCLI["Claude Terminal (CLI)"]
             CodexCLI["Codex CLI"]
-            LocalWeights["Local Open-Source (GPT-OSS 120B)"]
+            LocalWeights["Local Terminal (GPT-OSS 120B)"]
         end
         subgraph DirectAPIs ["Direct Cloud APIs"]
             GeminiAPI["Google Gemini API"]
