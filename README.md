@@ -83,12 +83,16 @@ flowchart TD
   - `POST /v1/responses`: OpenAI Responses API structure.
   - `GET /v1/models` and `GET /v1/models/{model_id}`: Live model registry with capability annotations.
   - `POST /v1/files`, `GET /v1/files`, `DELETE /v1/files/{file_id}`: Multimodal document and image uploads.
+- **Model Context Protocol (MCP) Server**:
+  - `POST /mcp`: Standard MCP JSON-RPC 2.0 protocol endpoint.
+  - `GET /mcp/sse`: Server-Sent Events endpoint for MCP clients like Cursor.
+  - `mcp_server.py`: Stdio adapter for Claude Desktop, Claude Code, and local agents to automate the active Autono browser session (`browser_task`, `browser_navigate`, `browser_click`, `browser_type`, `browser_screenshot`, `browser_get_active_tab`).
 - **Anthropic Claude Agent SDK Compatibility**:
   - `POST /v1/messages`: Drop-in replacement for the official `anthropic-python` SDK (`base_url="http://127.0.0.1:8000"`).
   - `POST /v1/claude/agent`: Autonomous web automation agent execution with tool calling (click, type, navigate, screenshot).
   - Extended thinking / Chain-of-Thought token budget handling (`thinking: {"type": "enabled", "budget_tokens": ...}`).
 - **Dual Runtime Modes**:
-  - **Modern GUI**: Intuitive CustomTkinter desktop interface with live start/stop button, active metrics, and request logs.
+  - **Modern Blue GUI**: Centered, high-clarity desktop interface with live start/stop button, 3 provider cards (Claude Code, Anti Gravity, Codex CLI) with dynamic **Activated** status detection, and real-time metrics.
   - **Headless Server**: Run in continuous server/CI mode using `python main.py --headless`.
 - **CORS Enabled**: Configured for local cross-origin browser extensions, local webapps, and sandboxes.
 - **Zero Paid Key Requirement**: Uses your active local Antigravity authentication session when running in Local Terminal mode.

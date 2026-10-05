@@ -17,13 +17,14 @@ from server.routes_responses import router as responses_router
 from server.routes_power import router as power_router, trigger_toast, ToastNotificationRequest
 from server.routes_code import router as code_router
 from server.routes_claude import router as claude_router
+from server.routes_mcp import router as mcp_router
 
 START_TIME = time.time()
 
 app = FastAPI(
-    title="Antigravity Bridge (OpenAI & Claude Agent Compatible API)",
-    description="Localhost bridge connecting OpenAI & Anthropic Claude clients to Antigravity CLI agents and SDK.",
-    version="1.1.0",
+    title="Model Bridge (OpenAI, Claude Agent & MCP Server)",
+    description="Localhost bridge connecting AI clients, Claude Code and local agents via MCP to Antigravity and browser automation.",
+    version="1.2.0",
 )
 
 # Enable CORS for all local web clients (LibreChat, Open WebUI, browser extensions, etc.)
@@ -40,6 +41,7 @@ app.include_router(models_router)
 app.include_router(files_router)
 app.include_router(chat_router)
 app.include_router(claude_router)
+app.include_router(mcp_router)
 app.include_router(responses_router)
 app.include_router(power_router)
 app.include_router(code_router)
