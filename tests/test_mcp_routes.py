@@ -85,6 +85,7 @@ async def test_mcp_get_installed_providers():
         parsed = json.loads(content_text)
         assert "installed_providers" in parsed
         assert "antigravity" in parsed["installed_providers"]
+        assert "claude_code" in parsed["installed_providers"]
         assert "tiktok_code" in parsed["installed_providers"]
         assert "codex" in parsed["installed_providers"]
 

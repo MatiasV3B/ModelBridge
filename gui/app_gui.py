@@ -2,11 +2,10 @@
 
 Features:
 - Focused, centered dashboard with minimal text and modern blue palette.
-- Real application logos: Flow logo (Antigravity CLI), Tiger mascot (Tiktok Code / Claude), and Cloud terminal logo (Codex CLI).
+- Real application logos: Flow logo (Antigravity CLI), Tiger mascot (Claude Code), and Cloud terminal logo (Codex CLI).
 - Auto-confirming login flow: launches login and automatically verifies active status, closing the window on completion.
-- Models tab structured into 3 distinct places: Antigravity CLI, Tiktok Code, and Codex CLI.
+- Models tab structured into 3 distinct places: Antigravity CLI, Claude Code, and Codex CLI.
 - Activity tab and counters removed for maximum clarity and speed.
-- Native MCP Server integration allowing external agents to discover installed tools and execute tasks.
 """
 
 import os
@@ -42,9 +41,13 @@ except ImportError:
 
 # Paths & Real App Logos
 ASSETS_DIR = Path(__file__).resolve().parent / "assets"
+claude_logo_path = ASSETS_DIR / "logo_claude_code.png"
+if not claude_logo_path.exists():
+    claude_logo_path = ASSETS_DIR / "logo_tiktok_code.png"
+
 PROVIDER_LOGOS = {
     "antigravity": ASSETS_DIR / "logo_flow_antigravity.png",
-    "claude": ASSETS_DIR / "logo_tiktok_code.png",
+    "claude": claude_logo_path,
     "codex": ASSETS_DIR / "logo_codex.png",
 }
 
@@ -301,7 +304,7 @@ class ModelBridgeGUI(ctk.CTk):
 
         lbl_subtitle = ctk.CTkLabel(
             brand_frame,
-            text="Pasarela local compatible con Autono, Antigravity CLI, Tiktok Code y Codex CLI",
+            text="Pasarela local compatible con Autono, Antigravity CLI, Claude Code y Codex CLI",
             font=ctk.CTkFont(size=11),
             text_color=PALETTE["text_muted"]
         )
@@ -336,20 +339,6 @@ class ModelBridgeGUI(ctk.CTk):
             command=lambda: self._copy_to_clipboard(f"http://{bridge_config.host}:{bridge_config.port}/v1")
         )
         btn_copy_quick.pack(side="left")
-
-        btn_copy_mcp = ctk.CTkButton(
-            right_frame,
-            text="🔌 Copiar MCP",
-            font=ctk.CTkFont(size=11, weight="bold"),
-            fg_color=PALETTE["card_border"],
-            hover_color="#334155",
-            text_color=PALETTE["accent_cyan"],
-            height=32,
-            width=110,
-            corner_radius=8,
-            command=lambda: self._copy_to_clipboard(f"http://{bridge_config.host}:{bridge_config.port}/mcp/sse")
-        )
-        btn_copy_mcp.pack(side="left", padx=(8, 0))
 
     # -------------------------------------------------------------
     # TAB NAVIGATION (3 FOCUSED TABS)
@@ -421,15 +410,6 @@ class ModelBridgeGUI(ctk.CTk):
         )
         self.lbl_hero_endpoint.pack()
 
-        # MCP Status note
-        self.lbl_mcp_note = ctk.CTkLabel(
-            hero_content,
-            text=f"🔌 Servidor MCP (SSE): http://{bridge_config.host}:{bridge_config.port}/mcp/sse",
-            font=ctk.CTkFont(family="Consolas", size=11),
-            text_color=PALETTE["accent_cyan"]
-        )
-        self.lbl_mcp_note.pack(pady=(4, 0))
-
         # 2. CENTERED SECTION: THE 3 PROVIDERS
         section_lbl = ctk.CTkLabel(
             container,
@@ -454,12 +434,12 @@ class ModelBridgeGUI(ctk.CTk):
             login_hint="Inicia sesión con tu cuenta de Google"
         )
 
-        # Card 2: Tiktok Code (Tiger Mascot Logo)
+        # Card 2: Claude Code (Tiger Mascot Logo)
         self.card_claude = self._create_provider_card(
             providers_row,
             col=1,
             key="claude",
-            title="Tiktok Code",
+            title="Claude Code",
             subtitle="Anthropic Claude Code CLI",
             login_hint="Inicia sesión con tu cuenta de Anthropic"
         )
@@ -687,7 +667,7 @@ class ModelBridgeGUI(ctk.CTk):
         )
 
     # -------------------------------------------------------------
-    # TAB 2: MODELOS (TRES LUGARES: ANTIGRAVITY, TIKTOK CODE, CODEX)
+    # TAB 2: MODELOS (TRES LUGARES: ANTIGRAVITY, CLAUDE CODE, CODEX)
     # -------------------------------------------------------------
     def _build_models_tab(self):
         container = ctk.CTkFrame(self.tab_models, fg_color="transparent")
@@ -772,7 +752,7 @@ class ModelBridgeGUI(ctk.CTk):
             },
             {
                 "key": "claude",
-                "title": "Tiktok Code",
+                "title": "Claude Code",
                 "subtitle": "Anthropic Claude Sonnet & Opus Thinking",
                 "filter": lambda m: m["id"].startswith("claude-")
             },
@@ -965,12 +945,12 @@ class ModelBridgeGUI(ctk.CTk):
         scroll = ctk.CTkScrollableFrame(self.tab_settings, fg_color="transparent")
         scroll.pack(fill="both", expand=True, padx=16, pady=12)
 
-        # Card 1: Red y Servidor MCP
-        c1 = self._create_settings_card(scroll, "🌐 Red, Puerto Local y Servidor MCP")
+        # Card 1: Red y Puerto Local
+        c1 = self._create_settings_card(scroll, "🌐 Red y Puerto Local")
 
         desc_lbl = ctk.CTkLabel(
             c1,
-            text="Personaliza el Host y Puerto de escucha de Model Bridge y el servidor MCP. Si un puerto está ocupado en tu equipo, puedes cambiarlo por cualquier otro puerto libre (ej. 8765, 8888, 9000).",
+            text="Configura el Host y Puerto de escucha local de Model Bridge. Puedes cambiar el puerto si otro servicio lo está usando en tu equipo (ej. 8765, 8888, 9000, 9090).",
             font=ctk.CTkFont(size=11),
             text_color=PALETTE["text_muted"],
             wraplength=620,
@@ -979,7 +959,7 @@ class ModelBridgeGUI(ctk.CTk):
         desc_lbl.pack(anchor="w", padx=16, pady=(0, 10))
 
         net_row = ctk.CTkFrame(c1, fg_color="transparent")
-        net_row.pack(fill="x", padx=16, pady=(0, 8))
+        net_row.pack(fill="x", padx=16, pady=(0, 14))
 
         ctk.CTkLabel(net_row, text="Host:", text_color=PALETTE["text_main"], font=ctk.CTkFont(weight="bold")).pack(side="left", padx=(0, 6))
         self.entry_host = ctk.CTkEntry(net_row, width=125, fg_color="#1e293b", border_color="#334155")
@@ -1004,61 +984,6 @@ class ModelBridgeGUI(ctk.CTk):
                 command=lambda port_val=p: self._set_port_preset(port_val)
             )
             btn_p.pack(side="left", padx=2)
-
-        # Dynamic Endpoints & MCP Preview Box
-        preview_box = ctk.CTkFrame(c1, fg_color="#0b1120", corner_radius=8, border_width=1, border_color="#1e293b")
-        preview_box.pack(fill="x", padx=16, pady=(6, 14))
-
-        self.lbl_preview_endpoints = ctk.CTkLabel(
-            preview_box,
-            text=f"API Base: http://{bridge_config.host}:{bridge_config.port}/v1  •  MCP SSE: http://{bridge_config.host}:{bridge_config.port}/mcp/sse",
-            font=ctk.CTkFont(family="Consolas", size=11),
-            text_color=PALETTE["accent_cyan"],
-            justify="left"
-        )
-        self.lbl_preview_endpoints.pack(anchor="w", padx=12, pady=(10, 6))
-
-        mcp_actions_row = ctk.CTkFrame(preview_box, fg_color="transparent")
-        mcp_actions_row.pack(fill="x", padx=12, pady=(0, 8))
-
-        btn_copy_mcp_url = ctk.CTkButton(
-            mcp_actions_row,
-            text="📋 Copiar URL MCP (SSE)",
-            height=26,
-            font=ctk.CTkFont(size=11, weight="bold"),
-            fg_color="#1e293b",
-            hover_color="#334155",
-            command=self._copy_mcp_url
-        )
-        btn_copy_mcp_url.pack(side="left", padx=(0, 8))
-
-        btn_copy_mcp_json = ctk.CTkButton(
-            mcp_actions_row,
-            text="📋 Copiar JSON de MCP",
-            height=26,
-            font=ctk.CTkFont(size=11, weight="bold"),
-            fg_color=PALETTE["accent_blue"],
-            hover_color=PALETTE["accent_blue_hover"],
-            command=self._copy_mcp_json
-        )
-        btn_copy_mcp_json.pack(side="left")
-
-        # Live JSON Snippet
-        self.txt_mcp_json = ctk.CTkTextbox(
-            preview_box,
-            height=80,
-            font=ctk.CTkFont(family="Consolas", size=11),
-            fg_color="#030712",
-            border_color="#1e293b",
-            border_width=1,
-            text_color="#e2e8f0"
-        )
-        self.txt_mcp_json.pack(fill="x", padx=12, pady=(0, 10))
-
-        # Real-time binding on host and port entries
-        self.entry_host.bind("<KeyRelease>", lambda e: self._update_mcp_preview())
-        self.entry_port.bind("<KeyRelease>", lambda e: self._update_mcp_preview())
-        self._update_mcp_preview()
 
         # Card 2: Rutas de Ejecutables
         c2 = self._create_settings_card(scroll, "⚡ Ruta de Antigravity CLI (agy.exe)")
@@ -1185,50 +1110,6 @@ class ModelBridgeGUI(ctk.CTk):
     def _set_port_preset(self, port_val: int):
         self.entry_port.delete(0, "end")
         self.entry_port.insert(0, str(port_val))
-        self._update_mcp_preview()
-
-    def _get_current_inputs_host_port(self):
-        h = self.entry_host.get().strip() or "127.0.0.1"
-        p = self.entry_port.get().strip() or str(bridge_config.port)
-        return h, p
-
-    def _update_mcp_preview(self):
-        try:
-            h, p = self._get_current_inputs_host_port()
-            api_url = f"http://{h}:{p}/v1"
-            mcp_url = f"http://{h}:{p}/mcp/sse"
-            if hasattr(self, "lbl_preview_endpoints"):
-                self.lbl_preview_endpoints.configure(
-                    text=f"API Base: {api_url}  •  MCP SSE: {mcp_url}"
-                )
-            if hasattr(self, "txt_mcp_json"):
-                snippet = {
-                    "mcpServers": {
-                        "autono-browser": {
-                            "url": mcp_url
-                        }
-                    }
-                }
-                snippet_text = json.dumps(snippet, indent=2)
-                self.txt_mcp_json.delete("1.0", "end")
-                self.txt_mcp_json.insert("1.0", snippet_text)
-        except Exception:
-            pass
-
-    def _copy_mcp_url(self):
-        h, p = self._get_current_inputs_host_port()
-        self._copy_to_clipboard(f"http://{h}:{p}/mcp/sse")
-
-    def _copy_mcp_json(self):
-        h, p = self._get_current_inputs_host_port()
-        snippet = {
-            "mcpServers": {
-                "autono-browser": {
-                    "url": f"http://{h}:{p}/mcp/sse"
-                }
-            }
-        }
-        self._copy_to_clipboard(json.dumps(snippet, indent=2))
 
     def _save_settings_full(self):
         try:
@@ -1258,12 +1139,6 @@ class ModelBridgeGUI(ctk.CTk):
             self.lbl_hero_endpoint.configure(
                 text=f"http://{bridge_config.host}:{bridge_config.port}/v1  •  API Key: sk-antigravity"
             )
-            if hasattr(self, "lbl_mcp_note"):
-                self.lbl_mcp_note.configure(
-                    text=f"🔌 Servidor MCP (SSE): http://{bridge_config.host}:{bridge_config.port}/mcp/sse"
-                )
-
-            self._update_mcp_preview()
 
             # If server is running and host/port changed, smoothly restart on new host/port
             if server_manager.is_running and host_or_port_changed:

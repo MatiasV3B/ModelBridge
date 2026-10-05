@@ -48,7 +48,7 @@ class BrowserActionResult(BaseModel):
 MCP_TOOLS_SPEC = [
     {
         "name": "get_installed_providers",
-        "description": "Inspect Model Bridge to discover all installed and authenticated AI CLI tools (Antigravity CLI, Tiktok Code / Claude, Codex CLI), active models, and check if the user's active Chrome browser session (Autono) is connected and ready to execute tasks.",
+        "description": "Inspect Model Bridge to discover all installed and authenticated AI CLI tools (Antigravity CLI, Claude Code, Codex CLI), active models, and check if the user's active Chrome browser session (Autono) is connected and ready to execute tasks.",
         "inputSchema": {
             "type": "object",
             "properties": {}
@@ -56,7 +56,7 @@ MCP_TOOLS_SPEC = [
     },
     {
         "name": "browser_task",
-        "description": "Execute an autonomous multi-step browsing task or goal inside the user's active Chrome browser session on the user's behalf using Autono and installed AI models (Antigravity CLI / Tiktok Code / Codex).",
+        "description": "Execute an autonomous multi-step browsing task or goal inside the user's active Chrome browser session on the user's behalf using Autono and installed AI models (Antigravity CLI / Claude Code / Codex).",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -255,8 +255,15 @@ async def execute_mcp_tool(tool_name: str, tool_args: dict) -> Dict[str, Any]:
                     "account": statuses["antigravity"].account or "No conectado",
                     "supported_models": ["gemini-3.8-flash-medium", "gemini-3.7-flash-medium", "gemini-3.1-pro-high"]
                 },
+                "claude_code": {
+                    "name": "Claude Code",
+                    "installed": statuses["claude"].installed,
+                    "active": statuses["claude"].active,
+                    "account": statuses["claude"].account or "No conectado",
+                    "supported_models": ["claude-sonnet-4-6", "claude-opus-4-6-thinking"]
+                },
                 "tiktok_code": {
-                    "name": "Tiktok Code (Claude Code)",
+                    "name": "Claude Code",
                     "installed": statuses["claude"].installed,
                     "active": statuses["claude"].active,
                     "account": statuses["claude"].account or "No conectado",
