@@ -85,7 +85,19 @@ async def create_chat_completion(request: Request):
     thinking_budget = body.get("thinking_budget")
     reasoning_effort = body.get("reasoning_effort") or body.get("thinking_effort")
 
+    path = request.url.path.lower()
+    url_provider = None
+    if path.startswith("/antigravity"):
+        url_provider = "antigravity"
+    elif path.startswith("/claude") or path.startswith("/cloud"):
+        url_provider = "claude"
+    elif path.startswith("/openai"):
+        url_provider = "openai"
+
+    provider = url_provider or body.get("provider") or request.headers.get("x-provider")
+
     forward_kwargs = {
+        "provider": provider,
         "claude_mode": claude_mode,
         "antigravity_mode": antigravity_mode,
         "openai_mode": openai_mode,

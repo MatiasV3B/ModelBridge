@@ -30,7 +30,7 @@ from core.config import bridge_config, FILES_DIR, set_windows_startup, is_window
 from core.bridge_engine import metrics
 from core.model_registry import model_registry
 from core.file_store import file_store
-from core.auth_status import check_all, login_command, ProviderStatus
+from core.auth_status import check_all, login_command, ProviderStatus, find_codex_binary
 from server.app import server_manager
 
 try:
@@ -56,11 +56,11 @@ PALETTE = {
     "bg": "#090d16",
     "card": "#111827",
     "card_border": "#1e293b",
-    "card_active_border": "#2563eb",
+    "card_active_border": "#3b82f6",
     "header_bg": "#0f172a",
-    "accent_blue": "#2563eb",
-    "accent_blue_hover": "#1d4ed8",
-    "accent_cyan": "#0ea5e9",
+    "accent_blue": "#3b82f6",
+    "accent_blue_hover": "#2563eb",
+    "accent_cyan": "#38bdf8",
     "accent_green": "#10b981",
     "accent_green_dark": "#064e3b",
     "accent_red": "#ef4444",
@@ -642,7 +642,8 @@ class ModelBridgeGUI(ctk.CTk):
                 cmd = f'start "Antigravity CLI Terminal" cmd /k "\"{agy_path}\""'
                 subprocess.Popen(cmd, shell=True)
             elif key == "codex":
-                cmd = 'start "Codex CLI Terminal" cmd /k "codex"'
+                codex_exe = find_codex_binary() or "codex"
+                cmd = f'start "Codex CLI Terminal" cmd /k "\"{codex_exe}\""'
                 subprocess.Popen(cmd, shell=True)
             return
 

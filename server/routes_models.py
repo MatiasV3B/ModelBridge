@@ -1,17 +1,27 @@
-"""OpenAI Models API endpoints."""
-
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from core.model_registry import model_registry
 
 router = APIRouter(tags=["Models"])
 
 
+def _extract_provider_from_path(request: Request):
+    path = request.url.path.lower()
+    if path.startswith("/antigravity"):
+        return "antigravity"
+    if path.startswith("/claude") or path.startswith("/cloud"):
+        return "claude"
+    if path.startswith("/openai"):
+        return "openai"
+    return request.headers.get("x-provider") or None
+
+
 @router.get("/v1/models")
 @router.get("/models")
 @router.get("/v1/v1/models")
-async def list_models():
-    """List available Antigravity models and aliases in OpenAI and Anthropic format."""
-    models = model_registry.to_openai_format()
+async def list_models(request: Request):
+    """List available models and aliases filtered by provider (or all if not specified)."""
+    provider = _extract_provider_from_path(request)
+    models = model_registry.to_openai_format(provider=provider)
     return {
         "object": "list",
         "data": models,
@@ -22,9 +32,10 @@ async def list_models():
 @router.get("/v1/models/{model_id}")
 @router.get("/models/{model_id}")
 @router.get("/v1/v1/models/{model_id}")
-async def retrieve_model(model_id: str):
+async def retrieve_model(model_id: str, request: Request):
     """Retrieve specific model details."""
-    models = model_registry.to_openai_format()
+    provider = _extract_provider_from_path(request)
+    models = model_registry.to_openai_format(provider=provider)
     for m in models:
         if m["id"].lower() == model_id.lower():
             return m

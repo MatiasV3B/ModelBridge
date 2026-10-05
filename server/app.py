@@ -36,7 +36,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Include routers
+# Include standard root routers (for backward compatibility and general clients)
 app.include_router(models_router)
 app.include_router(files_router)
 app.include_router(chat_router)
@@ -45,6 +45,16 @@ app.include_router(mcp_router)
 app.include_router(responses_router)
 app.include_router(power_router)
 app.include_router(code_router)
+
+# Include provider-specific endpoints: /{provider}/...
+# (e.g. /antigravity/v1/chat/completions, /claude/v1/chat/completions, /openai/v1/chat/completions)
+for prov in ("antigravity", "claude", "cloud", "openai"):
+    app.include_router(chat_router, prefix=f"/{prov}")
+    app.include_router(models_router, prefix=f"/{prov}")
+    app.include_router(responses_router, prefix=f"/{prov}")
+    if prov in ("claude", "cloud", "antigravity"):
+        app.include_router(claude_router, prefix=f"/{prov}")
+
 
 
 @app.get("/")

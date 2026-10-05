@@ -137,10 +137,24 @@ class BridgeEngine:
         }
         metrics.add_log(log_entry)
 
-        # Provider identification
-        is_claude = claude_agent_executor.is_claude_model(resolved_model)
-        is_openai = any(x in resolved_model.lower() for x in ["gpt", "codex", "o3", "davinci"]) and not is_claude
-        is_gemini = "gemini" in resolved_model.lower() and not is_claude and not is_openai
+        # Provider identification (supports explicit provider prefix from endpoint)
+        explicit_provider = kwargs.get("provider")
+        if explicit_provider == "antigravity":
+            is_claude = False
+            is_openai = False
+            is_gemini = True
+        elif explicit_provider in ("claude", "cloud"):
+            is_claude = True
+            is_openai = False
+            is_gemini = False
+        elif explicit_provider == "openai":
+            is_claude = False
+            is_openai = True
+            is_gemini = False
+        else:
+            is_claude = claude_agent_executor.is_claude_model(resolved_model)
+            is_openai = any(x in resolved_model.lower() for x in ["gpt", "codex", "o3", "davinci"]) and not is_claude
+            is_gemini = not is_claude and not is_openai
 
         # Mode & Key resolution
         passed_claude_key = kwargs.get("api_key") or kwargs.get("anthropic_api_key") or self.config.anthropic_api_key or os.environ.get("ANTHROPIC_API_KEY")

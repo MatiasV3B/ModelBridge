@@ -81,16 +81,55 @@ def _jwt_email(token: Optional[str]) -> str:
         return ""
 
 
+def find_codex_binary() -> Optional[str]:
+    """Find the full path to codex.exe or codex.cmd and ensure its folder is in PATH."""
+    exe = shutil.which("codex") or shutil.which("codex.cmd") or shutil.which("codex.exe")
+    if exe and os.path.exists(exe):
+        return exe
+
+    local_app_data = os.environ.get("LOCALAPPDATA")
+    candidates = []
+    if local_app_data:
+        candidates.append(Path(local_app_data) / "Programs" / "OpenAI" / "Codex" / "bin" / "codex.exe")
+    candidates.append(Path.home() / "AppData" / "Local" / "Programs" / "OpenAI" / "Codex" / "bin" / "codex.exe")
+    candidates.append(Path.home() / "AppData" / "Roaming" / "npm" / "codex.cmd")
+    candidates.append(Path.home() / "AppData" / "Roaming" / "npm" / "codex.exe")
+    candidates.append(Path.home() / ".cargo" / "bin" / "codex.exe")
+
+    for c in candidates:
+        if c.exists():
+            bin_dir = str(c.parent)
+            if bin_dir not in os.environ.get("PATH", ""):
+                os.environ["PATH"] = bin_dir + os.pathsep + os.environ.get("PATH", "")
+            return str(c)
+
+    return None
+
+
 def read_codex_login(codex_home: Path) -> Tuple[bool, str]:
-    """Codex CLI stores ChatGPT tokens or an API key in <CODEX_HOME>/auth.json."""
+    """Codex CLI stores ChatGPT tokens, API key or custom provider in <CODEX_HOME>/auth.json or config.toml."""
     data = _read_json(codex_home / "auth.json")
-    if not data:
-        return False, ""
-    tokens = data.get("tokens") if isinstance(data.get("tokens"), dict) else {}
-    if tokens.get("access_token") or tokens.get("refresh_token"):
-        return True, _jwt_email(tokens.get("id_token"))
-    if data.get("OPENAI_API_KEY"):
-        return True, "API key"
+    if data:
+        tokens = data.get("tokens") if isinstance(data.get("tokens"), dict) else {}
+        if tokens.get("access_token") or tokens.get("refresh_token"):
+            return True, _jwt_email(tokens.get("id_token")) or "ChatGPT Account"
+        if data.get("OPENAI_API_KEY"):
+            return True, "API key"
+
+    # Also check config.toml for configured model providers or api keys
+    config_toml = codex_home / "config.toml"
+    if config_toml.exists():
+        try:
+            content = config_toml.read_text(encoding="utf-8")
+            if "api_key" in content or "model_provider" in content:
+                # Extract provider name if available
+                import re
+                prov_match = re.search(r'name\s*=\s*"([^"]+)"', content)
+                prov_name = prov_match.group(1) if prov_match else "Codex CLI"
+                return True, prov_name
+        except Exception:
+            pass
+
     return False, ""
 
 
@@ -130,7 +169,8 @@ def check_antigravity() -> ProviderStatus:
 
 
 def check_codex() -> ProviderStatus:
-    installed = bool(shutil.which("codex"))
+    exe = find_codex_binary()
+    installed = bool(exe)
     logged_in, account = read_codex_login(_codex_home())
     return ProviderStatus("codex", installed, logged_in, account)
 
@@ -157,7 +197,7 @@ def login_command(key: str) -> Optional[str]:
             f'""{agy}" & echo Autenticacion completada con exito. Cerrando... & timeout /t 2 >nul"'
         )
     if key == "codex":
-        exe = shutil.which("codex") or "codex"
+        exe = find_codex_binary() or "codex"
         return f'start "Codex CLI - Iniciar sesion" cmd /c ""{exe}" login & echo Autenticacion completada con exito. Cerrando... & timeout /t 2 >nul"'
     return None
 

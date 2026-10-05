@@ -237,20 +237,35 @@ class ModelRegistry:
         # If it looks like a gemini or claude model directly
         return requested_model
 
-    def to_openai_format(self) -> List[Dict[str, Any]]:
-        """Format models for OpenAI /v1/models response."""
+    def to_openai_format(self, provider: Optional[str] = None) -> List[Dict[str, Any]]:
+        """Format models for OpenAI /v1/models response, optionally filtered by provider."""
         now = int(time.time())
         result = []
 
+        def match_provider(mid: str) -> bool:
+            if not provider:
+                return True
+            p = provider.lower()
+            m = mid.lower()
+            if p == "antigravity":
+                return m.startswith("gemini-") or "oss" in m or "antigravity" in m
+            if p in ("claude", "cloud"):
+                return m.startswith("claude-") or "sonnet" in m or "opus" in m or "haiku" in m or "fable" in m
+            if p == "openai":
+                return "gpt" in m or "codex" in m or "o3" in m or "davinci" in m
+            return True
+
         # Real Antigravity models
         for m in self.get_models():
+            if not match_provider(m["id"]):
+                continue
             result.append({
                 "id": m["id"],
                 "object": "model",
                 "type": "model",
                 "created": now,
                 "created_at": now,
-                "owned_by": "antigravity",
+                "owned_by": provider or "antigravity",
                 "permission": [],
                 "root": m["id"],
                 "parent": None,
@@ -261,13 +276,15 @@ class ModelRegistry:
 
         # Also expose common aliases so clients don't error if checking existence
         for alias, target in MODEL_ALIASES.items():
+            if not match_provider(alias) and not match_provider(target):
+                continue
             result.append({
                 "id": alias,
                 "object": "model",
                 "type": "model",
                 "created": now,
                 "created_at": now,
-                "owned_by": "antigravity-alias",
+                "owned_by": f"{provider or 'antigravity'}-alias",
                 "permission": [],
                 "root": target,
                 "parent": None,
