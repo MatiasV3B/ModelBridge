@@ -1,12 +1,12 @@
 @echo off
-title Antigravity Bridge - Claude Code Terminal
+title Claude Code - Terminal CLI
 
 :: Configurar variables de entorno para Claude Code
-set ANTHROPIC_BASE_URL=http://127.0.0.1:8000
+set ANTHROPIC_BASE_URL=http://127.0.0.1:8765
 if "%ANTHROPIC_API_KEY%"=="" set ANTHROPIC_API_KEY=sk-antigravity
 
 echo =====================================================================
-echo   CLAUDE CODE (TERMINAL) VIA ANTIGRAVITY BRIDGE
+echo   CLAUDE CODE - TERMINAL CLI (ANTIGRAVITY BRIDGE)
 echo =====================================================================
 echo.
 echo   [+] Base URL:  %ANTHROPIC_BASE_URL%
@@ -23,8 +23,8 @@ echo.
 echo =====================================================================
 echo.
 
-:: Verificar si el servidor Antigravity Bridge esta en ejecucion en el puerto 8000
-powershell -NoProfile -Command "$s = New-Object Net.Sockets.TcpClient; try { $s.Connect('127.0.0.1', 8000); $s.Close(); exit 0 } catch { exit 1 }" >nul 2>&1
+:: Verificar si el servidor Antigravity Bridge esta en ejecucion en el puerto 8765
+powershell -NoProfile -Command "$s = New-Object Net.Sockets.TcpClient; try { $s.Connect('127.0.0.1', 8765); $s.Close(); exit 0 } catch { exit 1 }" >nul 2>&1
 if %ERRORLEVEL% NEQ 0 (
     echo [i] Iniciando Antigravity Bridge en segundo plano...
     start /b pythonw "%~dp0main.py" --headless >nul 2>&1

@@ -587,18 +587,11 @@ class ModelBridgeGUI(ctk.CTk):
                     acc_display = acc_display[:25] + "..."
                 lbl_acc.configure(text=f"Cuenta: {acc_display}", text_color="#38bdf8")
 
-                if key == "claude":
-                    btn.configure(
-                        text="💻 Abrir Terminal",
-                        fg_color="#4f46e5",
-                        hover_color="#4338ca"
-                    )
-                else:
-                    btn.configure(
-                        text="💻 Terminal CLI",
-                        fg_color="#334155",
-                        hover_color="#475569"
-                    )
+                btn.configure(
+                    text="💻 Terminal CLI",
+                    fg_color="#334155" if key != "claude" else "#4f46e5",
+                    hover_color="#475569" if key != "claude" else "#4338ca"
+                )
             elif st.installed:
                 # Installed but not logged in
                 card.configure(border_color=PALETTE["card_border"])

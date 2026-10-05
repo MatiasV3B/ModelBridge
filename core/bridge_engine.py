@@ -232,8 +232,31 @@ class BridgeEngine:
                                 }
                             ],
                         }
+            elif is_openai:
+                # Local Codex Desktop CLI execution
+                async for chunk_text, event_data in self._stream_codex_cli(prompt, resolved_model, attached_files):
+                    if chunk_text:
+                        full_response_text += chunk_text
+                        completion_tokens += 1
+                        yield {
+                            "id": req_id,
+                            "object": "chat.completion.chunk",
+                            "created": created_time,
+                            "model": resolved_model,
+                            "choices": [
+                                {
+                                    "index": 0,
+                                    "delta": {"content": chunk_text},
+                                    "finish_reason": None,
+                                }
+                            ],
+                        }
+                    if event_data and "usage" in event_data:
+                        u = event_data["usage"]
+                        prompt_tokens = u.get("input_tokens", prompt_tokens)
+                        completion_tokens = u.get("output_tokens", completion_tokens)
             else:
-                # Local Desktop / CLI execution (Antigravity Desktop, Claude Desktop CLI, or Codex Desktop)
+                # Local Desktop / CLI execution (Antigravity Desktop, Claude Desktop CLI)
                 async for chunk_text, event_data in self._stream_cli(prompt, resolved_model, attached_files):
                     if chunk_text:
                         full_response_text += chunk_text
@@ -457,6 +480,132 @@ class BridgeEngine:
 
             except json.JSONDecodeError:
                 # Raw text fallback if non-json line appeared
+                if in_thinking:
+                    yield ("</thought>\n\n", None)
+                    in_thinking = False
+                yield (line + "\n", None)
+
+        if in_thinking:
+            yield ("</thought>\n\n", None)
+            in_thinking = False
+
+        await process.wait()
+
+    async def _stream_codex_cli(
+        self, prompt: str, model: str, attached_files: List[str]
+    ) -> AsyncGenerator[Tuple[str, Optional[Dict[str, Any]]], None]:
+        """Stream chunks by spawning `codex.exe exec --json --skip-git-repo-check -`."""
+        codex_path = getattr(self.config, "codex_binary_path", "")
+        if not codex_path or not os.path.exists(codex_path):
+            from core.auth_status import find_codex_binary
+            codex_path = find_codex_binary() or "codex"
+
+        cmd = [
+            codex_path,
+            "exec",
+            "--json",
+            "--skip-git-repo-check",
+            "-",
+        ]
+
+        # Check if a model is explicitly passed that is supported by current login
+        # Note: ChatGPT subscription auth in Codex CLI rejects explicit -m gpt-4o/o3 if not in config.
+        # Only pass -m if user explicitly picked a non-default custom model name that isn't standard chatgpt alias
+        m_lower = model.lower().strip()
+        if m_lower and not any(x in m_lower for x in ["gpt-4o", "chatgpt", "codex", "default"]):
+            cmd.extend(["-m", model])
+
+        # Attach directory contexts if available
+        for f in attached_files:
+            p = Path(f)
+            if p.exists():
+                cmd.extend(["--add-dir", str(p.parent)])
+
+        extra_kwargs = {}
+        if sys.platform == "win32":
+            extra_kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
+
+        process = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            **extra_kwargs,
+        )
+
+        # Write prompt to stdin and close stdin so codex exec knows input is finished
+        try:
+            prompt_bytes = prompt.encode("utf-8")
+            process.stdin.write(prompt_bytes)
+            await process.stdin.drain()
+            process.stdin.close()
+            await process.stdin.wait_closed()
+        except Exception as e:
+            yield (f"\n[Codex Stdin Error: {e}]\n", None)
+            return
+
+        in_thinking = False
+        while True:
+            line_bytes = await process.stdout.readline()
+            if not line_bytes:
+                break
+
+            line = line_bytes.decode("utf-8", errors="replace").strip()
+            if not line:
+                continue
+
+            try:
+                data = json.loads(line)
+                event_type = data.get("type")
+
+                # Agent message item completed
+                if event_type == "item.completed":
+                    item = data.get("item", {})
+                    itype = item.get("type")
+                    if itype == "agent_message":
+                        text = item.get("text", "")
+                        if in_thinking:
+                            yield ("</thought>\n\n", None)
+                            in_thinking = False
+                        if text:
+                            yield (text, None)
+                    elif itype == "reasoning":
+                        reasoning = item.get("text") or item.get("reasoning", "")
+                        if reasoning:
+                            if not in_thinking:
+                                yield (f"<thought>{reasoning}", None)
+                                in_thinking = True
+                            else:
+                                yield (reasoning, None)
+
+                # Real-time delta streaming if supported in current CLI version
+                elif event_type in ("item.delta", "text_delta", "agent_message.delta"):
+                    delta_text = data.get("delta", {}).get("text") or data.get("text") or ""
+                    if delta_text:
+                        if in_thinking:
+                            yield (f"</thought>\n\n{delta_text}", None)
+                            in_thinking = False
+                        else:
+                            yield (delta_text, None)
+
+                elif event_type == "turn.completed":
+                    if in_thinking:
+                        yield ("</thought>\n\n", None)
+                        in_thinking = False
+                    usage = data.get("usage", {})
+                    yield ("", {"usage": {
+                        "input_tokens": usage.get("input_tokens", 0),
+                        "output_tokens": usage.get("output_tokens", 0),
+                    }})
+
+                elif event_type in ("error", "turn.failed"):
+                    if in_thinking:
+                        yield ("</thought>\n\n", None)
+                        in_thinking = False
+                    err_msg = data.get("message") or data.get("error", {}).get("message") or "Error en Codex CLI"
+                    yield (f"\n[Codex Error: {err_msg}]\n", None)
+
+            except json.JSONDecodeError:
                 if in_thinking:
                     yield ("</thought>\n\n", None)
                     in_thinking = False

@@ -39,6 +39,28 @@ def find_agy_binary() -> str:
     return "agy"
 
 
+def find_codex_binary() -> str:
+    """Find the path to codex.exe on Windows or systems."""
+    which_path = shutil.which("codex") or shutil.which("codex.cmd") or shutil.which("codex.exe")
+    if which_path and os.path.exists(which_path):
+        return which_path
+
+    local_app_data = os.environ.get("LOCALAPPDATA")
+    candidates = []
+    if local_app_data:
+        candidates.append(Path(local_app_data) / "Programs" / "OpenAI" / "Codex" / "bin" / "codex.exe")
+    candidates.append(Path.home() / "AppData" / "Local" / "Programs" / "OpenAI" / "Codex" / "bin" / "codex.exe")
+    candidates.append(Path.home() / "AppData" / "Roaming" / "npm" / "codex.cmd")
+    candidates.append(Path.home() / "AppData" / "Roaming" / "npm" / "codex.exe")
+    candidates.append(Path.home() / ".cargo" / "bin" / "codex.exe")
+
+    for c in candidates:
+        if c.exists():
+            return str(c)
+
+    return "codex"
+
+
 @dataclass
 class BridgeConfig:
     host: str = "127.0.0.1"
@@ -46,6 +68,7 @@ class BridgeConfig:
     default_model: str = "gemini-3.8-flash-medium"
     engine_mode: str = "cli"  # "cli" or "sdk"
     agy_binary_path: str = ""
+    codex_binary_path: str = ""
     antigravity_mode: str = "desktop"  # "desktop" (Local Antigravity CLI) or "api" (Gemini API)
     claude_mode: str = "desktop"       # "desktop" (Claude Desktop service) or "api" (Claude API)
     openai_mode: str = "desktop"       # "desktop" (Codex Desktop CLI) or "api" (ChatGPT API)
@@ -61,6 +84,8 @@ class BridgeConfig:
     def __post_init__(self):
         if not self.agy_binary_path:
             self.agy_binary_path = find_agy_binary()
+        if not self.codex_binary_path:
+            self.codex_binary_path = find_codex_binary()
         if not self.gemini_api_key:
             self.gemini_api_key = os.environ.get("GEMINI_API_KEY")
         if not self.anthropic_api_key:

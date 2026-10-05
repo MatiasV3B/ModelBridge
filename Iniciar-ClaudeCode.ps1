@@ -1,13 +1,13 @@
 # Antigravity Bridge - Claude Code Launcher (PowerShell)
-$Host.UI.RawUI.WindowTitle = "Antigravity Bridge - Claude Code Terminal"
+$Host.UI.RawUI.WindowTitle = "Claude Code - Terminal CLI"
 
-$env:ANTHROPIC_BASE_URL = "http://127.0.0.1:8000"
+$env:ANTHROPIC_BASE_URL = "http://127.0.0.1:8765"
 if (-not $env:ANTHROPIC_API_KEY) {
     $env:ANTHROPIC_API_KEY = "sk-antigravity"
 }
 
 Write-Host "=====================================================================" -ForegroundColor Cyan
-Write-Host "  CLAUDE CODE (TERMINAL) VIA ANTIGRAVITY BRIDGE" -ForegroundColor Green
+Write-Host "  CLAUDE CODE - TERMINAL CLI (ANTIGRAVITY BRIDGE)" -ForegroundColor Green
 Write-Host "=====================================================================" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "  [+] Base URL:  $($env:ANTHROPIC_BASE_URL)" -ForegroundColor White
@@ -24,11 +24,11 @@ Write-Host ""
 Write-Host "=====================================================================" -ForegroundColor Cyan
 Write-Host ""
 
-# Check if Bridge is running on port 8000
+# Check if Bridge is running on port 8765
 $tcp = New-Object Net.Sockets.TcpClient
 $isConnected = $false
 try {
-    $tcp.Connect("127.0.0.1", 8000)
+    $tcp.Connect("127.0.0.1", 8765)
     $isConnected = $true
     $tcp.Close()
 } catch {
