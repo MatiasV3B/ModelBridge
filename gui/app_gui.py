@@ -533,7 +533,7 @@ class ModelBridgeGUI(ctk.CTk):
         lbl_account = ctk.CTkLabel(
             inner,
             text=login_hint,
-            font=ctk.CTkFont(size=10.5),
+            font=ctk.CTkFont(size=11),
             text_color=PALETTE["text_sub"],
             wraplength=230,
             justify="left"
@@ -1408,9 +1408,13 @@ class ModelBridgeGUI(ctk.CTk):
         sys.exit(0)
 
 
-def main():
+def run_gui():
     app = ModelBridgeGUI()
     app.mainloop()
+
+
+def main():
+    run_gui()
 
 
 if __name__ == "__main__":
