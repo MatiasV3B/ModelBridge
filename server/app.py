@@ -81,6 +81,8 @@ async def refresh_models():
 
 
 class ConfigUpdateRequest(BaseModel):
+    host: Optional[str] = None
+    port: Optional[int] = None
     antigravity_mode: Optional[str] = None
     claude_mode: Optional[str] = None
     openai_mode: Optional[str] = None
@@ -93,9 +95,14 @@ class ConfigUpdateRequest(BaseModel):
 
 @app.get("/api/config")
 async def get_bridge_config():
-    """Retrieve active bridge configuration including Antigravity, Claude, and OpenAI modes."""
+    """Retrieve active bridge configuration including host, port, Antigravity, Claude, and OpenAI modes."""
     import os
+    h = getattr(bridge_config, "host", "127.0.0.1")
+    p = getattr(bridge_config, "port", 8765)
     return {
+        "host": h,
+        "port": p,
+        "mcp_url": f"http://{h}:{p}/mcp/sse",
         "antigravity_mode": getattr(bridge_config, "antigravity_mode", "desktop"),
         "claude_mode": getattr(bridge_config, "claude_mode", "desktop"),
         "openai_mode": getattr(bridge_config, "openai_mode", "desktop"),
@@ -112,7 +119,11 @@ async def get_bridge_config():
 
 @app.post("/api/config")
 async def update_bridge_config(req: ConfigUpdateRequest):
-    """Update and persist bridge configuration for all provider engines."""
+    """Update and persist bridge configuration for all provider engines, host and port."""
+    if req.host is not None and req.host.strip():
+        bridge_config.host = req.host.strip()
+    if req.port is not None and 1 <= req.port <= 65535:
+        bridge_config.port = req.port
     if req.antigravity_mode is not None:
         bridge_config.antigravity_mode = req.antigravity_mode
     if req.claude_mode is not None:
@@ -131,8 +142,13 @@ async def update_bridge_config(req: ConfigUpdateRequest):
         bridge_config.engine_mode = req.engine_mode
     bridge_config.save()
     import os
+    h = getattr(bridge_config, "host", "127.0.0.1")
+    p = getattr(bridge_config, "port", 8765)
     return {
         "status": "ok",
+        "host": h,
+        "port": p,
+        "mcp_url": f"http://{h}:{p}/mcp/sse",
         "antigravity_mode": getattr(bridge_config, "antigravity_mode", "desktop"),
         "claude_mode": getattr(bridge_config, "claude_mode", "desktop"),
         "openai_mode": getattr(bridge_config, "openai_mode", "desktop"),
@@ -150,21 +166,33 @@ async def root_trigger_toast(req: ToastNotificationRequest):
 
 
 class ServerManager:
-    """Manages starting and stopping Uvicorn server in a dedicated background thread."""
+    """Manages starting, stopping and restarting Uvicorn server in a dedicated background thread."""
 
     def __init__(self):
         self._server: uvicorn.Server = None
         self._thread: threading.Thread = None
         self._is_running: bool = False
+        self._current_host: str = "127.0.0.1"
+        self._current_port: int = 8765
 
     @property
     def is_running(self) -> bool:
         return self._is_running
 
-    def start(self, host: str = "127.0.0.1", port: int = 8000):
+    @property
+    def host(self) -> str:
+        return self._current_host
+
+    @property
+    def port(self) -> int:
+        return self._current_port
+
+    def start(self, host: str = "127.0.0.1", port: int = 8765, log_level: str = "INFO"):
         if self._is_running:
             return
 
+        self._current_host = host
+        self._current_port = port
         config = uvicorn.Config(
             app=app,
             host=host,
@@ -187,6 +215,12 @@ class ServerManager:
         if self._server and self._is_running:
             self._server.should_exit = True
             self._is_running = False
+
+    def restart(self, host: str = "127.0.0.1", port: int = 8765, log_level: str = "INFO"):
+        self.stop()
+        import time
+        time.sleep(0.6)
+        self.start(host=host, port=port, log_level=log_level)
 
 
 server_manager = ServerManager()

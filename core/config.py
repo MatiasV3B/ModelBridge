@@ -42,7 +42,7 @@ def find_agy_binary() -> str:
 @dataclass
 class BridgeConfig:
     host: str = "127.0.0.1"
-    port: int = 8000
+    port: int = 8765
     default_model: str = "gemini-3.8-flash-medium"
     engine_mode: str = "cli"  # "cli" or "sdk"
     agy_binary_path: str = ""
@@ -74,6 +74,8 @@ class BridgeConfig:
             try:
                 with open(CONFIG_FILE, "r", encoding="utf-8") as f:
                     data = json.load(f)
+                if data.get("port") == 8000:
+                    data["port"] = 8765
                 return cls(**data)
             except Exception:
                 pass

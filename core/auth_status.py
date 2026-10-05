@@ -144,21 +144,21 @@ def check_all() -> Dict[str, ProviderStatus]:
 
 
 def login_command(key: str) -> Optional[str]:
-    """Windows `start` command line that opens a terminal with the login flow."""
+    """Windows `start` command line that opens a terminal with the login flow and auto-closes when done."""
     if key == "claude":
         exe = shutil.which("claude") or "claude"
-        return f'start "Claude Code - Iniciar sesion" cmd /k ""{exe}" auth login"'
+        return f'start "Claude Code - Iniciar sesion" cmd /c ""{exe}" auth login & echo Autenticacion completada con exito. Cerrando... & timeout /t 2 >nul"'
     if key == "antigravity":
         agy = bridge_config.agy_binary_path
         if not agy or not os.path.exists(agy):
             return None
         return (
-            f'start "Antigravity - Iniciar sesion" cmd /k '
-            f'""{agy}" && echo. && echo Sesion lista. Puedes cerrar esta ventana. && pause"'
+            f'start "Antigravity - Iniciar sesion" cmd /c '
+            f'""{agy}" & echo Autenticacion completada con exito. Cerrando... & timeout /t 2 >nul"'
         )
     if key == "codex":
         exe = shutil.which("codex") or "codex"
-        return f'start "Codex CLI - Iniciar sesion" cmd /k ""{exe}" login"'
+        return f'start "Codex CLI - Iniciar sesion" cmd /c ""{exe}" login & echo Autenticacion completada con exito. Cerrando... & timeout /t 2 >nul"'
     return None
 
 

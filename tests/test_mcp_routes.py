@@ -61,3 +61,30 @@ async def test_mcp_status_endpoint():
         assert data["status"] == "online"
         assert "browser_connected" in data
         assert "tools_count" in data
+
+
+@pytest.mark.anyio
+async def test_mcp_get_installed_providers():
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        req = {
+            "jsonrpc": "2.0",
+            "id": 42,
+            "method": "tools/call",
+            "params": {
+                "name": "get_installed_providers",
+                "arguments": {}
+            }
+        }
+        res = await client.post("/mcp", json=req)
+        assert res.status_code == 200
+        data = res.json()
+        assert data["id"] == 42
+        assert "result" in data
+        content_text = data["result"]["content"][0]["text"]
+        parsed = json.loads(content_text)
+        assert "installed_providers" in parsed
+        assert "antigravity" in parsed["installed_providers"]
+        assert "tiktok_code" in parsed["installed_providers"]
+        assert "codex" in parsed["installed_providers"]
+

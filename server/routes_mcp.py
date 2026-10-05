@@ -15,6 +15,9 @@ from pydantic import BaseModel
 from fastapi import APIRouter, Request, HTTPException
 from fastapi.responses import JSONResponse, StreamingResponse
 
+from core.config import bridge_config
+from core.auth_status import check_all
+
 logger = logging.getLogger("model_bridge.mcp")
 
 router = APIRouter(tags=["Model Context Protocol (MCP)"])
@@ -44,14 +47,22 @@ class BrowserActionResult(BaseModel):
 # Tool catalog exposed via MCP
 MCP_TOOLS_SPEC = [
     {
+        "name": "get_installed_providers",
+        "description": "Inspect Model Bridge to discover all installed and authenticated AI CLI tools (Antigravity CLI, Tiktok Code / Claude, Codex CLI), active models, and check if the user's active Chrome browser session (Autono) is connected and ready to execute tasks.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {}
+        }
+    },
+    {
         "name": "browser_task",
-        "description": "Execute an autonomous multi-step browsing task or goal inside the user's active Chrome browser session using Autono.",
+        "description": "Execute an autonomous multi-step browsing task or goal inside the user's active Chrome browser session on the user's behalf using Autono and installed AI models (Antigravity CLI / Tiktok Code / Codex).",
         "inputSchema": {
             "type": "object",
             "properties": {
                 "goal": {
                     "type": "string",
-                    "description": "The goal, query, or automation task to execute in the browser (e.g. 'Search for hotels in Tokyo on booking.com and list top 3')"
+                    "description": "The goal, query, or automation task to execute on the user's behalf in the browser (e.g. 'Search for hotels in Tokyo on booking.com and list top 3')"
                 },
                 "mode": {
                     "type": "string",
@@ -170,11 +181,16 @@ async def dispatch_browser_action(action: str, params: Optional[Dict[str, Any]] 
 # ─── HTTP Endpoints for Autono Browser Extension ─────────────────────────────
 @router.get("/api/mcp/status")
 async def get_mcp_status():
-    """Return status of MCP bridge and whether Autono is actively listening."""
+    """Return status of MCP bridge, host, port, and whether Autono is actively listening."""
     is_connected = (time.time() - last_browser_ping) < 25
+    h = getattr(bridge_config, "host", "127.0.0.1")
+    p = getattr(bridge_config, "port", 8765)
     return {
         "status": "online",
         "mcp_version": "2024-11-05",
+        "host": h,
+        "port": p,
+        "mcp_url": f"http://{h}:{p}/mcp/sse",
         "browser_connected": is_connected,
         "pending_actions_count": action_queue.qsize(),
         "tools_count": len(MCP_TOOLS_SPEC)
@@ -222,6 +238,88 @@ async def execute_direct_action(req: BrowserActionRequest):
     """Direct HTTP endpoint to execute a browser action via Autono."""
     res = await dispatch_browser_action(req.action, req.params, req.timeout or 45)
     return res
+
+
+async def execute_mcp_tool(tool_name: str, tool_args: dict) -> Dict[str, Any]:
+    """Execute an MCP tool call either locally or via the active Autono browser session."""
+    if tool_name in ("get_installed_providers", "get_bridge_status"):
+        try:
+            from core.auth_status import check_all
+            statuses = check_all()
+            is_connected = (time.time() - last_browser_ping) < 25
+            providers_info = {
+                "antigravity": {
+                    "name": "Antigravity CLI (Flow)",
+                    "installed": statuses["antigravity"].installed,
+                    "active": statuses["antigravity"].active,
+                    "account": statuses["antigravity"].account or "No conectado",
+                    "supported_models": ["gemini-3.8-flash-medium", "gemini-3.7-flash-medium", "gemini-3.1-pro-high"]
+                },
+                "tiktok_code": {
+                    "name": "Tiktok Code (Claude Code)",
+                    "installed": statuses["claude"].installed,
+                    "active": statuses["claude"].active,
+                    "account": statuses["claude"].account or "No conectado",
+                    "supported_models": ["claude-sonnet-4-6", "claude-opus-4-6-thinking"]
+                },
+                "codex": {
+                    "name": "Codex CLI",
+                    "installed": statuses["codex"].installed,
+                    "active": statuses["codex"].active,
+                    "account": statuses["codex"].account or "No conectado",
+                    "supported_models": ["gpt-oss-120b-medium", "gpt-4o"]
+                }
+            }
+            active_names = [p["name"] for p in providers_info.values() if p["active"]]
+            summary_msg = (
+                f"Model Bridge tiene instalados y activos: {', '.join(active_names) if active_names else 'Ninguno autenticado aún'}. "
+                f"Sesión activa de Chrome (Autono): {'Conectada y lista para ejecutar tareas' if is_connected else 'En espera de conexión'}. "
+                "Puedes llamar a 'browser_task' para ejecutar tareas complejas en la sesión de navegación activa."
+            )
+            payload = {
+                "status": "ready",
+                "installed_providers": providers_info,
+                "browser_session_connected": is_connected,
+                "message": summary_msg
+            }
+            return {
+                "content": [{"type": "text", "text": json.dumps(payload, indent=2, ensure_ascii=False)}],
+                "isError": False
+            }
+        except Exception as e:
+            return {
+                "content": [{"type": "text", "text": f"Error querying installed providers: {e}"}],
+                "isError": True
+            }
+
+    action_map = {
+        "browser_task": "browser_task",
+        "browser_get_active_tab": "get_active_tab",
+        "browser_navigate": "navigate",
+        "browser_click": "click",
+        "browser_type": "type",
+        "browser_screenshot": "screenshot"
+    }
+
+    action = action_map.get(tool_name)
+    if not action:
+        return {
+            "content": [{"type": "text", "text": f"Method/Tool '{tool_name}' not found."}],
+            "isError": True
+        }
+
+    res = await dispatch_browser_action(action, tool_args, timeout=60)
+    if res.get("status") == "error":
+        return {
+            "content": [{"type": "text", "text": f"Error executing browser action: {res.get('error', 'Unknown error')}"}],
+            "isError": True
+        }
+
+    data_str = json.dumps(res.get("result", {}), ensure_ascii=False, indent=2) if isinstance(res.get("result"), (dict, list)) else str(res.get("result") or "Action completed successfully.")
+    return {
+        "content": [{"type": "text", "text": data_str}],
+        "isError": False
+    }
 
 
 # ─── Standard MCP JSON-RPC 2.0 Protocol Endpoint (POST /mcp) ─────────────────
@@ -272,56 +370,11 @@ async def handle_mcp_jsonrpc(request: Request):
     if method == "tools/call":
         tool_name = params.get("name", "")
         tool_args = params.get("arguments", {})
-
-        action_map = {
-            "browser_task": "browser_task",
-            "browser_get_active_tab": "get_active_tab",
-            "browser_navigate": "navigate",
-            "browser_click": "click",
-            "browser_type": "type",
-            "browser_screenshot": "screenshot"
-        }
-
-        action = action_map.get(tool_name)
-        if not action:
-            return {
-                "jsonrpc": "2.0",
-                "id": msg_id,
-                "error": {
-                    "code": -32601,
-                    "message": f"Method/Tool '{tool_name}' not found."
-                }
-            }
-
-        res = await dispatch_browser_action(action, tool_args, timeout=60)
-        if res.get("status") == "error":
-            return {
-                "jsonrpc": "2.0",
-                "id": msg_id,
-                "result": {
-                    "content": [
-                        {
-                            "type": "text",
-                            "text": f"Error executing browser action: {res.get('error', 'Unknown error')}"
-                        }
-                    ],
-                    "isError": True
-                }
-            }
-
-        data_str = json.dumps(res.get("result", {}), ensure_ascii=False, indent=2) if isinstance(res.get("result"), (dict, list)) else str(res.get("result") or "Action completed successfully.")
+        result_dict = await execute_mcp_tool(tool_name, tool_args)
         return {
             "jsonrpc": "2.0",
             "id": msg_id,
-            "result": {
-                "content": [
-                    {
-                        "type": "text",
-                        "text": data_str
-                    }
-                ],
-                "isError": False
-            }
+            "result": result_dict
         }
 
     # 5. Ping
@@ -411,31 +464,11 @@ async def mcp_post_message(request: Request, session_id: str):
     elif method == "tools/call":
         tool_name = params.get("name", "")
         tool_args = params.get("arguments", {})
-        action_map = {
-            "browser_task": "browser_task",
-            "browser_get_active_tab": "get_active_tab",
-            "browser_navigate": "navigate",
-            "browser_click": "click",
-            "browser_type": "type",
-            "browser_screenshot": "screenshot"
-        }
-        action = action_map.get(tool_name)
-        if not action:
-            await queue.put({
-                "jsonrpc": "2.0",
-                "id": msg_id,
-                "error": {"code": -32601, "message": f"Tool '{tool_name}' not found."}
-            })
-        else:
-            res = await dispatch_browser_action(action, tool_args, timeout=60)
-            data_str = json.dumps(res.get("result", {}), ensure_ascii=False) if isinstance(res.get("result"), (dict, list)) else str(res.get("result") or "Done")
-            await queue.put({
-                "jsonrpc": "2.0",
-                "id": msg_id,
-                "result": {
-                    "content": [{"type": "text", "text": data_str}],
-                    "isError": res.get("status") == "error"
-                }
-            })
+        result_dict = await execute_mcp_tool(tool_name, tool_args)
+        await queue.put({
+            "jsonrpc": "2.0",
+            "id": msg_id,
+            "result": result_dict
+        })
 
     return {"status": "accepted"}
