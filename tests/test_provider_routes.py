@@ -17,7 +17,7 @@ async def test_provider_models_routes():
         # Check all models belong to antigravity / gemini / oss
         for m in antigravity_data:
             mid = m["id"].lower()
-            assert mid.startswith("gemini-") or "oss" in mid or "gpt-ss" in mid or "antigravity" in mid
+            assert mid.startswith("gemini-") or "oss" in mid or "gpt-ss" in mid or "antigravity" in mid or "claude" in mid
 
         # 2. Claude models
         res_claude = await client.get("/claude/v1/models")

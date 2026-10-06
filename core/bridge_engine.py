@@ -6,6 +6,7 @@ import json
 import time
 import uuid
 import base64
+import shutil
 import asyncio
 import subprocess
 from pathlib import Path
