@@ -255,8 +255,56 @@ class BridgeEngine:
                         u = event_data["usage"]
                         prompt_tokens = u.get("input_tokens", prompt_tokens)
                         completion_tokens = u.get("output_tokens", completion_tokens)
+            elif is_claude:
+                # Local Claude Desktop / CLI execution
+                claude_binary = getattr(self.config, "claude_binary_path", "") or shutil.which("claude")
+                if claude_binary and (shutil.which(claude_binary) or os.path.exists(claude_binary)):
+                    async for chunk_text, event_data in self._stream_claude_cli(prompt, resolved_model, attached_files):
+                        if chunk_text:
+                            full_response_text += chunk_text
+                            completion_tokens += 1
+                            yield {
+                                "id": req_id,
+                                "object": "chat.completion.chunk",
+                                "created": created_time,
+                                "model": resolved_model,
+                                "choices": [
+                                    {
+                                        "index": 0,
+                                        "delta": {"content": chunk_text},
+                                        "finish_reason": None,
+                                    }
+                                ],
+                            }
+                        if event_data and "usage" in event_data:
+                            u = event_data["usage"]
+                            prompt_tokens = u.get("input_tokens", prompt_tokens)
+                            completion_tokens = u.get("output_tokens", completion_tokens)
+                else:
+                    # Fallback to Antigravity CLI if claude binary is not found
+                    async for chunk_text, event_data in self._stream_cli(prompt, resolved_model, attached_files):
+                        if chunk_text:
+                            full_response_text += chunk_text
+                            completion_tokens += 1
+                            yield {
+                                "id": req_id,
+                                "object": "chat.completion.chunk",
+                                "created": created_time,
+                                "model": resolved_model,
+                                "choices": [
+                                    {
+                                        "index": 0,
+                                        "delta": {"content": chunk_text},
+                                        "finish_reason": None,
+                                    }
+                                ],
+                            }
+                        if event_data and "usage" in event_data:
+                            u = event_data["usage"]
+                            prompt_tokens = u.get("input_tokens", prompt_tokens)
+                            completion_tokens = u.get("output_tokens", completion_tokens)
             else:
-                # Local Desktop / CLI execution (Antigravity Desktop, Claude Desktop CLI)
+                # Local Desktop / CLI execution (Antigravity Desktop agy.exe)
                 async for chunk_text, event_data in self._stream_cli(prompt, resolved_model, attached_files):
                     if chunk_text:
                         full_response_text += chunk_text
@@ -604,6 +652,131 @@ class BridgeEngine:
                         in_thinking = False
                     err_msg = data.get("message") or data.get("error", {}).get("message") or "Error en Codex CLI"
                     yield (f"\n[Codex Error: {err_msg}]\n", None)
+
+            except json.JSONDecodeError:
+                if in_thinking:
+                    yield ("</thought>\n\n", None)
+                    in_thinking = False
+                yield (line + "\n", None)
+
+        if in_thinking:
+            yield ("</thought>\n\n", None)
+            in_thinking = False
+
+        await process.wait()
+
+    async def _stream_claude_cli(
+        self, prompt: str, model: str, attached_files: List[str]
+    ) -> AsyncGenerator[Tuple[str, Optional[Dict[str, Any]]], None]:
+        """Stream chunks by spawning `claude -p - --output-format stream-json --verbose --include-partial-messages`."""
+        claude_path = getattr(self.config, "claude_binary_path", "") or shutil.which("claude") or "claude"
+
+        cmd = [
+            claude_path,
+            "-p", "-",
+            "--output-format", "stream-json",
+            "--verbose",
+            "--include-partial-messages",
+            "--dangerously-skip-permissions",
+        ]
+
+        # Map or pass model if supported
+        clean_model = model.strip()
+        if clean_model:
+            # Map friendly aliases if needed
+            if "sonnet-4-6" in clean_model:
+                clean_model = "claude-sonnet-4-6"
+            elif "opus-4-7" in clean_model:
+                clean_model = "claude-opus-4-7"
+            elif "haiku-4-5" in clean_model:
+                clean_model = "claude-haiku-4-5"
+            cmd.extend(["--model", clean_model])
+
+        for f in attached_files:
+            p = Path(f)
+            if p.exists():
+                cmd.extend(["--add-dir", str(p.parent)])
+
+        extra_kwargs = {}
+        if sys.platform == "win32":
+            extra_kwargs["creationflags"] = subprocess.CREATE_NO_WINDOW
+
+        process = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            **extra_kwargs,
+        )
+
+        try:
+            prompt_bytes = prompt.encode("utf-8")
+            process.stdin.write(prompt_bytes)
+            await process.stdin.drain()
+            process.stdin.close()
+            await process.stdin.wait_closed()
+        except Exception as e:
+            yield (f"\n[Claude Stdin Error: {e}]\n", None)
+            return
+
+        in_thinking = False
+        while True:
+            line_bytes = await process.stdout.readline()
+            if not line_bytes:
+                break
+
+            line = line_bytes.decode("utf-8", errors="replace").strip()
+            if not line:
+                continue
+
+            try:
+                data = json.loads(line)
+                ev_type = data.get("type")
+
+                # Real-time token streaming via stream_event
+                if ev_type == "stream_event":
+                    event = data.get("event", {})
+                    etype = event.get("type")
+                    if etype == "content_block_delta":
+                        delta = event.get("delta", {})
+                        if delta.get("type") == "text_delta":
+                            chunk_text = delta.get("text", "")
+                            if chunk_text:
+                                yield (chunk_text, None)
+                        elif delta.get("type") == "thinking_delta":
+                            thinking_text = delta.get("thinking", "")
+                            if thinking_text:
+                                if not in_thinking:
+                                    yield (f"<thought>{thinking_text}", None)
+                                    in_thinking = True
+                                else:
+                                    yield (thinking_text, None)
+
+                # Fallback block parsing
+                elif ev_type == "assistant":
+                    msg = data.get("message", {})
+                    for block in msg.get("content", []):
+                        if block.get("type") == "text":
+                            t = block.get("text", "")
+                            # Only yield if not already streamed
+                            pass
+
+                elif ev_type == "result":
+                    if in_thinking:
+                        yield ("</thought>\n\n", None)
+                        in_thinking = False
+                    usage = data.get("usage", {})
+                    yield ("", {"usage": {
+                        "input_tokens": usage.get("input_tokens", 0),
+                        "output_tokens": usage.get("output_tokens", 0),
+                    }})
+
+                elif ev_type in ("error", "fatal"):
+                    if in_thinking:
+                        yield ("</thought>\n\n", None)
+                        in_thinking = False
+                    err_msg = data.get("message") or data.get("error", {}).get("message") or "Error en Claude Code CLI"
+                    yield (f"\n[Claude Code Error: {err_msg}]\n", None)
 
             except json.JSONDecodeError:
                 if in_thinking:

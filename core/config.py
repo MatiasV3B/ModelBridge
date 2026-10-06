@@ -39,6 +39,29 @@ def find_agy_binary() -> str:
     return "agy"
 
 
+def find_claude_binary() -> str:
+    """Find the path to claude.exe on Windows or systems."""
+    which_path = shutil.which("claude") or shutil.which("claude.cmd") or shutil.which("claude.exe")
+    if which_path and os.path.exists(which_path):
+        return which_path
+
+    local_app_data = os.environ.get("LOCALAPPDATA")
+    candidates = []
+    if local_app_data:
+        winget_dir = Path(local_app_data) / "Microsoft" / "WinGet" / "Packages"
+        if winget_dir.exists():
+            for pkg in winget_dir.glob("*ClaudeCode*"):
+                exe = pkg / "claude.exe"
+                if exe.exists():
+                    candidates.append(exe)
+    candidates.append(Path.home() / "AppData" / "Roaming" / "npm" / "claude.cmd")
+    candidates.append(Path.home() / "AppData" / "Roaming" / "npm" / "claude.exe")
+    for c in candidates:
+        if c.exists():
+            return str(c)
+    return "claude"
+
+
 def find_codex_binary() -> str:
     """Find the path to codex.exe on Windows or systems."""
     which_path = shutil.which("codex") or shutil.which("codex.cmd") or shutil.which("codex.exe")
@@ -68,6 +91,7 @@ class BridgeConfig:
     default_model: str = "gemini-3.8-flash-medium"
     engine_mode: str = "cli"  # "cli" or "sdk"
     agy_binary_path: str = ""
+    claude_binary_path: str = ""
     codex_binary_path: str = ""
     antigravity_mode: str = "desktop"  # "desktop" (Local Antigravity CLI) or "api" (Gemini API)
     claude_mode: str = "desktop"       # "desktop" (Claude Desktop service) or "api" (Claude API)
@@ -84,6 +108,8 @@ class BridgeConfig:
     def __post_init__(self):
         if not self.agy_binary_path:
             self.agy_binary_path = find_agy_binary()
+        if not self.claude_binary_path:
+            self.claude_binary_path = find_claude_binary()
         if not self.codex_binary_path:
             self.codex_binary_path = find_codex_binary()
         if not self.gemini_api_key:
