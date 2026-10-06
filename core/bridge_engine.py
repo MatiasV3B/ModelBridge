@@ -5,6 +5,7 @@ import sys
 import json
 import time
 import uuid
+import re
 import base64
 import shutil
 import asyncio
@@ -349,8 +350,20 @@ class BridgeEngine:
                         else:
                             raise
 
-                if not streamed_claude:
-                    # Fallback to Antigravity CLI which natively supports Claude models
+                if not streamed_claude and explicit_provider in ("claude", "cloud"):
+                    # The request explicitly asked for Claude Code: do not silently route it through Antigravity
+                    msg = "\n[Claude Code did not return a response. Check that the Claude CLI is installed and signed in.]\n"
+                    full_response_text += msg
+                    completion_tokens += 1
+                    yield {
+                        "id": req_id,
+                        "object": "chat.completion.chunk",
+                        "created": created_time,
+                        "model": resolved_model,
+                        "choices": [{"index": 0, "delta": {"content": msg}, "finish_reason": None}],
+                    }
+                elif not streamed_claude:
+                    # Implicit routing (no explicit provider): Antigravity CLI natively supports Claude models
                     async for chunk_text, event_data in self._stream_cli(prompt, resolved_model, attached_files):
                         if chunk_text:
                             full_response_text += chunk_text
@@ -753,6 +766,9 @@ class BridgeEngine:
         # Map or pass model if supported
         clean_model = model.strip()
         if clean_model:
+            # Antigravity-style effort variants (e.g. claude-sonnet-5-5-medium) are not valid Claude Code
+            # model names: the CLI rejects them, so use the base model id.
+            clean_model = re.sub(r"-(low|medium|high)$", "", clean_model, flags=re.IGNORECASE)
             # Map friendly aliases if needed
             if "sonnet-4-6" in clean_model:
                 clean_model = "claude-sonnet-4-6"
@@ -835,6 +851,10 @@ class BridgeEngine:
                     if in_thinking:
                         yield ("</thought>\n\n", None)
                         in_thinking = False
+                    if data.get("is_error"):
+                        # e.g. unknown model / not logged in: show the real reason instead of an empty answer
+                        err_text = str(data.get("result") or data.get("error") or "Error en Claude Code CLI")
+                        yield (f"\n[Claude Code Error: {err_text}]\n", None)
                     usage = data.get("usage", {})
                     yield ("", {"usage": {
                         "input_tokens": usage.get("input_tokens", 0),
