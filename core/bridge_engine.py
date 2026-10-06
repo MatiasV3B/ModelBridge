@@ -121,7 +121,8 @@ class BridgeEngine:
         """
         req_id = f"chatcmpl-{uuid.uuid4().hex[:20]}"
         created_time = int(time.time())
-        resolved_model = model_registry.resolve_model(model)
+        effort = kwargs.get("reasoning_effort") or kwargs.get("thinking_effort") or kwargs.get("thinking_budget")
+        resolved_model = model_registry.resolve_model(model, effort=effort)
 
         prompt, attached_files = extract_content_and_files(messages)
 
@@ -171,33 +172,65 @@ class BridgeEngine:
         use_gemini_api = is_gemini and (antigravity_mode == "api" or (antigravity_mode == "auto" and bool(passed_gemini_key))) and bool(passed_gemini_key)
         use_openai_api = is_openai and (openai_mode == "api" or (openai_mode == "auto" and bool(passed_openai_key))) and bool(passed_openai_key)
 
+        clean_kwargs = dict(kwargs)
+        clean_kwargs.pop("api_key", None)
+        clean_kwargs.pop("anthropic_api_key", None)
+        clean_kwargs.pop("gemini_api_key", None)
+        clean_kwargs.pop("openai_api_key", None)
+
         full_response_text = ""
         prompt_tokens = len(prompt) // 4 + 10
         completion_tokens = 0
 
         try:
             if use_claude_api:
-                # Direct Anthropic Claude API execution
-                async for chunk_text, event_data in self._stream_claude_agent(prompt, messages, resolved_model, api_key=passed_claude_key, **kwargs):
-                    if chunk_text:
-                        full_response_text += chunk_text
-                        completion_tokens += 1
-                        yield {
-                            "id": req_id,
-                            "object": "chat.completion.chunk",
-                            "created": created_time,
-                            "model": resolved_model,
-                            "choices": [
-                                {
-                                    "index": 0,
-                                    "delta": {"content": chunk_text},
-                                    "finish_reason": None,
+                # Direct Anthropic Claude API execution with automatic fallback
+                claude_streamed = False
+                try:
+                    async for chunk_text, event_data in self._stream_claude_agent(prompt, messages, resolved_model, api_key=passed_claude_key, **clean_kwargs):
+                        if chunk_text:
+                            claude_streamed = True
+                            full_response_text += chunk_text
+                            completion_tokens += 1
+                            yield {
+                                "id": req_id,
+                                "object": "chat.completion.chunk",
+                                "created": created_time,
+                                "model": resolved_model,
+                                "choices": [
+                                    {
+                                        "index": 0,
+                                        "delta": {"content": chunk_text},
+                                        "finish_reason": None,
+                                    }
+                                ],
+                            }
+                except Exception as api_err:
+                    if not claude_streamed:
+                        import logging
+                        logging.getLogger("antigravity_bridge").warning(f"Claude API attempt failed ({api_err}). Falling back to local CLI...")
+                        async for chunk_text, event_data in self._stream_cli(prompt, resolved_model, attached_files):
+                            if chunk_text:
+                                full_response_text += chunk_text
+                                completion_tokens += 1
+                                yield {
+                                    "id": req_id,
+                                    "object": "chat.completion.chunk",
+                                    "created": created_time,
+                                    "model": resolved_model,
+                                    "choices": [
+                                        {
+                                            "index": 0,
+                                            "delta": {"content": chunk_text},
+                                            "finish_reason": None,
+                                        }
+                                    ],
                                 }
-                            ],
-                        }
+                    else:
+                        raise
             elif use_openai_api:
                 # Direct OpenAI / ChatGPT API execution
-                async for chunk_text, event_data in self._stream_openai_api(prompt, messages, resolved_model, api_key=passed_openai_key, **kwargs):
+                async for chunk_text, event_data in self._stream_openai_api(prompt, messages, resolved_model, api_key=passed_openai_key, **clean_kwargs):
                     if chunk_text:
                         full_response_text += chunk_text
                         completion_tokens += 1
@@ -215,24 +248,50 @@ class BridgeEngine:
                             ],
                         }
             elif use_gemini_api:
-                # Direct Google Gemini API execution
-                async for token in self._stream_sdk(prompt, resolved_model, attached_files):
-                    if token:
-                        full_response_text += token
-                        completion_tokens += 1
-                        yield {
-                            "id": req_id,
-                            "object": "chat.completion.chunk",
-                            "created": created_time,
-                            "model": resolved_model,
-                            "choices": [
-                                {
-                                    "index": 0,
-                                    "delta": {"content": token},
-                                    "finish_reason": None,
+                # Direct Google Gemini API execution with automatic fallback
+                gemini_streamed = False
+                try:
+                    async for token in self._stream_sdk(prompt, resolved_model, attached_files):
+                        if token:
+                            gemini_streamed = True
+                            full_response_text += token
+                            completion_tokens += 1
+                            yield {
+                                "id": req_id,
+                                "object": "chat.completion.chunk",
+                                "created": created_time,
+                                "model": resolved_model,
+                                "choices": [
+                                    {
+                                        "index": 0,
+                                        "delta": {"content": token},
+                                        "finish_reason": None,
+                                    }
+                                ],
+                            }
+                except Exception as sdk_err:
+                    if not gemini_streamed:
+                        import logging
+                        logging.getLogger("antigravity_bridge").warning(f"Gemini SDK attempt failed ({sdk_err}). Falling back to local CLI...")
+                        async for chunk_text, event_data in self._stream_cli(prompt, resolved_model, attached_files):
+                            if chunk_text:
+                                full_response_text += chunk_text
+                                completion_tokens += 1
+                                yield {
+                                    "id": req_id,
+                                    "object": "chat.completion.chunk",
+                                    "created": created_time,
+                                    "model": resolved_model,
+                                    "choices": [
+                                        {
+                                            "index": 0,
+                                            "delta": {"content": chunk_text},
+                                            "finish_reason": None,
+                                        }
+                                    ],
                                 }
-                            ],
-                        }
+                    else:
+                        raise
             elif is_openai:
                 # Local Codex Desktop CLI execution
                 async for chunk_text, event_data in self._stream_codex_cli(prompt, resolved_model, attached_files):
@@ -259,30 +318,39 @@ class BridgeEngine:
             elif is_claude:
                 # Local Claude Desktop / CLI execution
                 claude_binary = getattr(self.config, "claude_binary_path", "") or shutil.which("claude")
+                streamed_claude = False
                 if claude_binary and (shutil.which(claude_binary) or os.path.exists(claude_binary)):
-                    async for chunk_text, event_data in self._stream_claude_cli(prompt, resolved_model, attached_files):
-                        if chunk_text:
-                            full_response_text += chunk_text
-                            completion_tokens += 1
-                            yield {
-                                "id": req_id,
-                                "object": "chat.completion.chunk",
-                                "created": created_time,
-                                "model": resolved_model,
-                                "choices": [
-                                    {
-                                        "index": 0,
-                                        "delta": {"content": chunk_text},
-                                        "finish_reason": None,
-                                    }
-                                ],
-                            }
-                        if event_data and "usage" in event_data:
-                            u = event_data["usage"]
-                            prompt_tokens = u.get("input_tokens", prompt_tokens)
-                            completion_tokens = u.get("output_tokens", completion_tokens)
-                else:
-                    # Fallback to Antigravity CLI if claude binary is not found
+                    try:
+                        async for chunk_text, event_data in self._stream_claude_cli(prompt, resolved_model, attached_files):
+                            if chunk_text:
+                                streamed_claude = True
+                                full_response_text += chunk_text
+                                completion_tokens += 1
+                                yield {
+                                    "id": req_id,
+                                    "object": "chat.completion.chunk",
+                                    "created": created_time,
+                                    "model": resolved_model,
+                                    "choices": [
+                                        {
+                                            "index": 0,
+                                            "delta": {"content": chunk_text},
+                                            "finish_reason": None,
+                                        }
+                                    ],
+                                }
+                            if event_data and "usage" in event_data:
+                                u = event_data["usage"]
+                                prompt_tokens = u.get("input_tokens", prompt_tokens)
+                                completion_tokens = u.get("output_tokens", completion_tokens)
+                    except Exception as err:
+                        if not streamed_claude:
+                            logger.warning(f"Claude CLI execution failed ({err}), falling back to Antigravity CLI.")
+                        else:
+                            raise
+
+                if not streamed_claude:
+                    # Fallback to Antigravity CLI which natively supports Claude models
                     async for chunk_text, event_data in self._stream_cli(prompt, resolved_model, attached_files):
                         if chunk_text:
                             full_response_text += chunk_text
@@ -478,6 +546,7 @@ class BridgeEngine:
             *cmd,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
+            cwd=str(Path.home()),
             **extra_kwargs,
         )
 
@@ -924,7 +993,8 @@ class BridgeEngine:
                 if in_thinking:
                     yield ("</thought>\n\n", None)
                     in_thinking = False
-                yield (f"\n[Error Claude Agent: {event.get('message')}]\n", None)
+                err_msg = event.get("message") or "Claude Agent error"
+                raise RuntimeError(err_msg)
 
         if in_thinking:
             yield ("</thought>\n\n", None)

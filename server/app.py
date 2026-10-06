@@ -1,5 +1,6 @@
 """FastAPI application setup and server lifecycle manager."""
 
+import asyncio
 import time
 import uvicorn
 import threading
@@ -85,8 +86,8 @@ async def get_metrics():
 
 @app.post("/api/models/refresh")
 async def refresh_models():
-    """Refresh models list from Antigravity CLI."""
-    models = model_registry.refresh_models()
+    """Refresh models list from CLIs asynchronously in background thread."""
+    models = await asyncio.to_thread(model_registry.refresh_models)
     return {"status": "ok", "models": models}
 
 

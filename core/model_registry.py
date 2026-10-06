@@ -162,10 +162,86 @@ def get_model_usage_limit(model_id: str) -> Dict[str, Any]:
     return MODEL_USAGE_LIMITS["gemini"]
 
 
+def _aggregate_model_variants(raw_models: List[Dict[str, str]]) -> List[Dict[str, Any]]:
+    """
+    Groups models that differ only by thinking effort (-high, -medium, -low, -thinking)
+    into a single canonical model representation with a 'thinking' list and 'variants' dict.
+    e.g. gemini-3.8-flash-high, gemini-3.8-flash-medium, gemini-3.8-flash-low
+         -> id: 'gemini-3.8-flash', name: 'Gemini 3.8 Flash', thinking: ['low', 'medium', 'high']
+    """
+    import re
+    grouped: Dict[str, Dict[str, Any]] = {}
+    ordered_ids: List[str] = []
+
+    for m in raw_models:
+        raw_id = m.get("id", "").strip()
+        raw_name = m.get("name", "").strip()
+        if not raw_id:
+            continue
+
+        effort = None
+        base_id = raw_id
+        if raw_id.endswith("-high"):
+            base_id = raw_id[:-5]
+            effort = "high"
+        elif raw_id.endswith("-medium"):
+            base_id = raw_id[:-7]
+            effort = "medium"
+        elif raw_id.endswith("-low"):
+            base_id = raw_id[:-4]
+            effort = "low"
+        elif raw_id.endswith("-thinking"):
+            base_id = raw_id[:-9]
+            effort = "thinking"
+
+        # Clean display name: remove trailing "(High)", "(Medium)", "(Low)", "(Thinking)"
+        clean_name = re.sub(r'\s*\((High|Medium|Low|Thinking)\)\s*$', '', raw_name, flags=re.IGNORECASE).strip()
+        if not clean_name:
+            clean_name = base_id
+
+        if base_id not in grouped:
+            grouped[base_id] = {
+                "id": base_id,
+                "name": clean_name,
+                "thinking": [],
+                "default_thinking": "medium",
+                "variants": {},
+                "default_variant": raw_id,
+            }
+            ordered_ids.append(base_id)
+
+        entry = grouped[base_id]
+        if effort:
+            if effort not in entry["thinking"]:
+                entry["thinking"].append(effort)
+            entry["variants"][effort] = raw_id
+            if effort == "medium" or not entry.get("default_variant"):
+                entry["default_variant"] = raw_id
+        else:
+            entry["variants"]["default"] = raw_id
+
+    result = []
+    for bid in ordered_ids:
+        item = grouped[bid]
+        if not item["thinking"]:
+            item["thinking"] = ["low", "medium", "high"]
+        order = ["low", "medium", "high", "thinking", "x-high", "max"]
+        item["thinking"].sort(key=lambda x: order.index(x) if x in order else 99)
+        if "medium" in item["thinking"]:
+            item["default_thinking"] = "medium"
+        elif "high" in item["thinking"]:
+            item["default_thinking"] = "high"
+        elif item["thinking"]:
+            item["default_thinking"] = item["thinking"][0]
+        result.append(item)
+
+    return result
+
+
 class ModelRegistry:
     def __init__(self):
-        self._models: List[Dict[str, str]] = []
-        self._provider_models: Dict[str, List[Dict[str, str]]] = {
+        self._models: List[Dict[str, Any]] = []
+        self._provider_models: Dict[str, List[Dict[str, Any]]] = {
             "antigravity": [],
             "claude": [],
             "openai": [],
@@ -317,22 +393,39 @@ class ModelRegistry:
 
         return claude_models
 
-    def refresh_models(self) -> List[Dict[str, str]]:
-        """Force refresh the model list across all CLIs."""
-        agy_list = self.fetch_antigravity_models()
-        codex_list = self.fetch_codex_models()
-        claude_list = self.fetch_claude_models()
+    def refresh_models(self) -> List[Dict[str, Any]]:
+        """Force refresh the model list across all CLIs and aggregate thinking variants."""
+        agy_raw = self.fetch_antigravity_models()
+        agy_list = _aggregate_model_variants(agy_raw)
+        codex_list = _aggregate_model_variants(self.fetch_codex_models())
+        claude_list = _aggregate_model_variants(self.fetch_claude_models())
+
+        antigravity_models = []
+        claude_models = list(claude_list)
+        openai_models = list(codex_list)
+
+        for m in agy_list:
+            mid = m["id"].lower()
+            if "claude" in mid or "sonnet" in mid or "opus" in mid:
+                if not any(x["id"] == m["id"] for x in claude_models):
+                    claude_models.append(m)
+                antigravity_models.append(m)
+            elif "gpt" in mid or "oss" in mid:
+                if not any(x["id"] == m["id"] for x in openai_models):
+                    openai_models.append(m)
+                antigravity_models.append(m)
+            else:
+                antigravity_models.append(m)
 
         self._provider_models = {
-            "antigravity": agy_list,
-            "openai": codex_list,
-            "claude": claude_list,
+            "antigravity": antigravity_models,
+            "openai": openai_models,
+            "claude": claude_models,
         }
 
-        # Combined registry models list
         all_models = []
         all_ids = set()
-        for group in (agy_list, codex_list, claude_list):
+        for group in (antigravity_models, openai_models, claude_models):
             for m in group:
                 if m["id"] not in all_ids:
                     all_ids.add(m["id"])
@@ -342,78 +435,80 @@ class ModelRegistry:
         self._last_fetch_time = time.time()
         return self._models
 
-    def get_models(self) -> List[Dict[str, str]]:
+    def get_models(self) -> List[Dict[str, Any]]:
         """Get models, refreshing if cache expired."""
         if time.time() - self._last_fetch_time > self._cache_duration or not self._models:
             self.refresh_models()
         return self._models
 
-    def resolve_model(self, requested_model: Optional[str]) -> str:
-        """Resolve a requested model ID, mapping aliases or defaulting to active model."""
+    def resolve_model(self, requested_model: Optional[str], effort: Optional[str] = None) -> str:
+        """Resolve a requested model ID, mapping aliases and selecting proper effort variant if applicable."""
         if not requested_model:
             return bridge_config.default_model
 
-        requested_model = requested_model.strip()
+        req = requested_model.strip()
+        req_lower = req.lower()
 
         # Check aliases
-        if requested_model in MODEL_ALIASES:
-            return MODEL_ALIASES[requested_model]
+        if req_lower in MODEL_ALIASES:
+            req = MODEL_ALIASES[req_lower]
+            req_lower = req.lower()
 
-        # Check exact match in registered models
+        eff = (effort or "").lower().strip()
+
+        # Check registered models for variant resolution
         for m in self.get_models():
-            if m["id"].lower() == requested_model.lower():
+            if m["id"].lower() == req_lower:
+                variants = m.get("variants", {})
+                if eff and eff in variants:
+                    return variants[eff]
+                if "default_variant" in m:
+                    return m["default_variant"]
                 return m["id"]
+            variants = m.get("variants", {})
+            for v_eff, v_id in variants.items():
+                if v_id.lower() == req_lower:
+                    return v_id
 
-        return requested_model
+        return req
 
     def to_openai_format(self, provider: Optional[str] = None) -> List[Dict[str, Any]]:
-        """Format models for OpenAI /v1/models response, optionally filtered by provider."""
+        """Format models for OpenAI /v1/models response, strictly deduplicated without exposing raw aliases."""
         now = int(time.time())
         result = []
         p_filter = provider.lower() if provider else None
         if p_filter == "cloud":
             p_filter = "claude"
 
-        # Emit models from each provider group
+        seen_ids = set()
+
         for prov_key, m_list in self._provider_models.items():
             if p_filter and p_filter != prov_key:
                 continue
 
             for m in m_list:
+                m_id = m["id"]
+                if m_id in seen_ids:
+                    continue
+                seen_ids.add(m_id)
+
                 result.append({
-                    "id": m["id"],
+                    "id": m_id,
                     "object": "model",
                     "type": "model",
                     "created": now,
                     "created_at": now,
                     "owned_by": prov_key,
                     "permission": [],
-                    "root": m["id"],
+                    "root": m_id,
                     "parent": None,
                     "display_name": m["name"],
-                    "usage_limit": get_model_usage_limit(m["id"]),
-                    "cli_quota": quota_manager.get_model_quota(m["id"]),
+                    "thinking": m.get("thinking", ["low", "medium", "high"]),
+                    "default_thinking": m.get("default_thinking", "medium"),
+                    "variants": m.get("variants", {}),
+                    "usage_limit": get_model_usage_limit(m_id),
+                    "cli_quota": quota_manager.get_model_quota(m_id),
                 })
-
-        # Also expose common aliases filtered appropriately
-        for alias, target in MODEL_ALIASES.items():
-            alias_prov = "claude" if ("claude" in alias or "sonnet" in alias or "opus" in alias or "haiku" in alias or "fable" in alias) else ("openai" if ("gpt" in alias or "codex" in alias) else "antigravity")
-            if p_filter and p_filter != alias_prov:
-                continue
-            result.append({
-                "id": alias,
-                "object": "model",
-                "type": "model",
-                "created": now,
-                "created_at": now,
-                "owned_by": f"{alias_prov}-alias",
-                "permission": [],
-                "root": target,
-                "parent": None,
-                "display_name": f"{alias} -> {target}",
-                "usage_limit": get_model_usage_limit(target),
-                "cli_quota": quota_manager.get_model_quota(target),
-            })
 
         return result
 
