@@ -237,7 +237,8 @@ class ClaudeAgentExecutor:
         tools: Optional[List[Dict[str, Any]]] = None,
         model: Optional[str] = None,
         thinking_budget: int = 0,
-        api_key: Optional[str] = None
+        api_key: Optional[str] = None,
+        effort: Optional[str] = None,
     ) -> AsyncGenerator[Dict[str, Any], None]:
         """
         Executes a turn with Claude via Anthropic Messages Stream API.
@@ -291,54 +292,115 @@ class ClaudeAgentExecutor:
                 "messages": conversation_messages,
             }
 
-            # Extended Thinking for Claude models that support thinking
-            supports_thinking = any(x in target_model.lower() for x in ["3-7", "3.7", "5-5", "5.5", "4-6", "4.6", "opus", "fable", "sonnet", "haiku"])
-            if thinking_budget > 0 and supports_thinking:
-                budget = max(1024, min(thinking_budget, 32768))
-                call_kwargs["thinking"] = {
-                    "type": "enabled",
-                    "budget_tokens": budget
-                }
-                call_kwargs["max_tokens"] = max(call_kwargs.get("max_tokens", 8192), budget + 4096)
+            # Extended Thinking for Claude models (Adaptive for modern, budget for legacy)
+            supports_thinking = any(x in target_model.lower() for x in ["3-7", "3.7", "5-5", "5.5", "4-6", "4.6", "4-7", "4.7", "opus", "fable", "sonnet", "haiku"])
+            is_adaptive_model = any(x in target_model.lower() for x in ["5-5", "5.5", "4-6", "4-7", "opus-5", "sonnet-5", "haiku-4", "fable"]) or ("3-7" not in target_model and "3.7" not in target_model)
+            effort_str = effort if effort in ["low", "medium", "high"] else ("high" if thinking_budget > 8192 else ("low" if 0 < thinking_budget <= 2048 else "medium"))
+
+            if (thinking_budget > 0 or effort) and supports_thinking:
+                if is_adaptive_model:
+                    # Anthropic API Standard for modern models:
+                    # Use "thinking.type.adaptive" and "output_config.effort"
+                    call_kwargs["thinking"] = {
+                        "type": "adaptive"
+                    }
+                    call_kwargs["output_config"] = {
+                        "effort": effort_str
+                    }
+                else:
+                    # Claude 3.7 Sonnet token-budget thinking
+                    budget = max(1024, min(thinking_budget, 32768))
+                    call_kwargs["thinking"] = {
+                        "type": "enabled",
+                        "budget_tokens": budget
+                    }
+                    call_kwargs["max_tokens"] = max(call_kwargs.get("max_tokens", 8192), budget + 4096)
 
             # Assign tools (custom or default browser agent tools)
             agent_tools = tools if tools is not None else BROWSER_AGENT_TOOLS
             if agent_tools:
                 call_kwargs["tools"] = agent_tools
 
-            async with active_client.messages.stream(**call_kwargs) as stream:
-                async for event in stream:
-                    event_type = getattr(event, "type", None)
+            try:
+                async with active_client.messages.stream(**call_kwargs) as stream:
+                    async for event in stream:
+                        event_type = getattr(event, "type", None)
 
-                    # Text delta
-                    if event_type == "text":
-                        yield {
-                            "type": "chunk",
-                            "text": event.text
-                        }
-                    # Thinking delta (CoT)
-                    elif event_type == "thinking":
-                        yield {
-                            "type": "reasoning",
-                            "thinking": event.thinking
-                        }
-                    # Tool use block
-                    elif event_type == "tool_use":
-                        yield {
-                            "type": "tool_call",
-                            "tool": event.name,
-                            "arguments": event.input
-                        }
+                        # Text delta
+                        if event_type == "text":
+                            yield {
+                                "type": "chunk",
+                                "text": event.text
+                            }
+                        # Thinking delta (CoT)
+                        elif event_type == "thinking":
+                            yield {
+                                "type": "reasoning",
+                                "thinking": event.thinking
+                            }
+                        # Tool use block
+                        elif event_type == "tool_use":
+                            yield {
+                                "type": "tool_call",
+                                "tool": event.name,
+                                "arguments": event.input
+                            }
 
-                final_msg = await stream.get_final_message()
-                yield {
-                    "type": "complete",
-                    "stop_reason": getattr(final_msg, "stop_reason", "end_turn"),
-                    "usage": {
-                        "input_tokens": final_msg.usage.input_tokens if hasattr(final_msg, "usage") else 0,
-                        "output_tokens": final_msg.usage.output_tokens if hasattr(final_msg, "usage") else 0,
+                    final_msg = await stream.get_final_message()
+                    yield {
+                        "type": "complete",
+                        "stop_reason": getattr(final_msg, "stop_reason", "end_turn"),
+                        "usage": {
+                            "input_tokens": final_msg.usage.input_tokens if hasattr(final_msg, "usage") else 0,
+                            "output_tokens": final_msg.usage.output_tokens if hasattr(final_msg, "usage") else 0,
+                        }
                     }
-                }
+            except anthropic.BadRequestError as bad_req:
+                err_text = str(bad_req)
+                if "thinking.type.adaptive" in err_text or "output_config.effort" in err_text:
+                    logger.warning(f"Model '{target_model}' rejected 'thinking.type.enabled'. Retrying with adaptive thinking...")
+                    call_kwargs["thinking"] = {"type": "adaptive"}
+                    call_kwargs["output_config"] = {"effort": effort_str}
+                    async with active_client.messages.stream(**call_kwargs) as retry_stream:
+                        async for event in retry_stream:
+                            event_type = getattr(event, "type", None)
+                            if event_type == "text":
+                                yield {"type": "chunk", "text": event.text}
+                            elif event_type == "thinking":
+                                yield {"type": "reasoning", "thinking": event.thinking}
+                            elif event_type == "tool_use":
+                                yield {"type": "tool_call", "tool": event.name, "arguments": event.input}
+                        final_msg = await retry_stream.get_final_message()
+                        yield {
+                            "type": "complete",
+                            "stop_reason": getattr(final_msg, "stop_reason", "end_turn"),
+                            "usage": {
+                                "input_tokens": final_msg.usage.input_tokens if hasattr(final_msg, "usage") else 0,
+                                "output_tokens": final_msg.usage.output_tokens if hasattr(final_msg, "usage") else 0,
+                            }
+                        }
+                elif "thinking" in err_text and ("not supported" in err_text or "unsupported" in err_text):
+                    logger.warning(f"Model '{target_model}' does not support thinking. Retrying without thinking...")
+                    call_kwargs.pop("thinking", None)
+                    call_kwargs.pop("output_config", None)
+                    async with active_client.messages.stream(**call_kwargs) as retry_stream:
+                        async for event in retry_stream:
+                            event_type = getattr(event, "type", None)
+                            if event_type == "text":
+                                yield {"type": "chunk", "text": event.text}
+                            elif event_type == "tool_use":
+                                yield {"type": "tool_call", "tool": event.name, "arguments": event.input}
+                        final_msg = await retry_stream.get_final_message()
+                        yield {
+                            "type": "complete",
+                            "stop_reason": getattr(final_msg, "stop_reason", "end_turn"),
+                            "usage": {
+                                "input_tokens": final_msg.usage.input_tokens if hasattr(final_msg, "usage") else 0,
+                                "output_tokens": final_msg.usage.output_tokens if hasattr(final_msg, "usage") else 0,
+                            }
+                        }
+                else:
+                    raise
 
         try:
             async for item in _execute_stream(resolved_model):

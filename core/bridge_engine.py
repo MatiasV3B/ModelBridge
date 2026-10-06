@@ -893,7 +893,7 @@ class BridgeEngine:
     async def _stream_openai_api(
         self, prompt: str, messages: List[Dict[str, Any]], model: str, api_key: str, **kwargs
     ) -> AsyncGenerator[Tuple[str, Optional[Dict[str, Any]]], None]:
-        """Stream chunks using official OpenAI Chat Completions API."""
+        """Stream chunks using official OpenAI Chat Completions API with adaptive parameter handling."""
         import httpx
         url = "https://api.openai.com/v1/chat/completions"
         headers = {
@@ -902,19 +902,46 @@ class BridgeEngine:
         }
         clean_model = model.replace("gpt-5-codex", "gpt-4o").replace("codex", "gpt-4o")
         msgs = messages if messages else [{"role": "user", "content": prompt}]
-        payload = {
-            "model": clean_model if ("gpt" in clean_model or "o3" in clean_model) else "gpt-4o",
+        actual_model = clean_model if ("gpt" in clean_model or "o3" in clean_model or "o1" in clean_model) else "gpt-4o"
+        is_reasoning_model = any(actual_model.lower().startswith(x) for x in ["o1", "o3", "o4"]) or "gpt-5" in actual_model.lower()
+
+        payload: Dict[str, Any] = {
+            "model": actual_model,
             "messages": msgs,
             "stream": True,
         }
+
+        effort = kwargs.get("reasoning_effort") or kwargs.get("thinking_effort") or "medium"
+        if is_reasoning_model:
+            # OpenAI documentation: Reasoning models (o1, o3-mini) support reasoning_effort
+            # and MUST NOT include temperature
+            payload["reasoning_effort"] = effort if effort in ["low", "medium", "high"] else "medium"
+        else:
+            temp = kwargs.get("temperature")
+            payload["temperature"] = temp if temp is not None else 0.2
+
         try:
             async with httpx.AsyncClient(timeout=60.0) as client:
-                async with client.stream("POST", url, json=payload, headers=headers) as response:
-                    if response.status_code != 200:
-                        err_bytes = await response.aread()
-                        yield (f"\n[OpenAI API Error {response.status_code}: {err_bytes.decode('utf-8', errors='ignore')}]\n", None)
+                response = await client.post(url, json=payload, headers=headers)
+                if response.status_code != 200:
+                    err_text = response.text
+                    # Auto-recovery for parameter mismatches
+                    if "temperature" in err_text and ("not supported" in err_text or "unsupported" in err_text):
+                        payload.pop("temperature", None)
+                        payload["reasoning_effort"] = effort if effort in ["low", "medium", "high"] else "medium"
+                    elif "reasoning_effort" in err_text and ("not supported" in err_text or "unsupported" in err_text):
+                        payload.pop("reasoning_effort", None)
+                        payload["temperature"] = 0.2
+                    else:
+                        yield (f"\n[OpenAI API Error {response.status_code}: {err_text}]\n", None)
                         return
-                    async for line in response.aiter_lines():
+
+                async with client.stream("POST", url, json=payload, headers=headers) as stream_resp:
+                    if stream_resp.status_code != 200:
+                        err_bytes = await stream_resp.aread()
+                        yield (f"\n[OpenAI API Error {stream_resp.status_code}: {err_bytes.decode('utf-8', errors='ignore')}]\n", None)
+                        return
+                    async for line in stream_resp.aiter_lines():
                         if line.startswith("data: "):
                             data_str = line[6:].strip()
                             if data_str == "[DONE]":
@@ -960,6 +987,7 @@ class BridgeEngine:
             messages=messages,
             model=model,
             thinking_budget=thinking_budget,
+            effort=effort,
             api_key=kwargs.get("api_key") or self.config.anthropic_api_key or os.environ.get("ANTHROPIC_API_KEY")
         ):
             etype = event.get("type")
