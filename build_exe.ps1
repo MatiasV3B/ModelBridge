@@ -11,7 +11,8 @@ if (-not $ScriptDir) { $ScriptDir = Get-Location }
 
 Set-Location $ScriptDir
 
-python -m PyInstaller `
+# PyInstaller se ejecuta dentro del entorno de uv (no hace falta instalar nada en el Python del sistema)
+uv run --with pyinstaller pyinstaller `
     --noconfirm `
     --onedir `
     --windowed `

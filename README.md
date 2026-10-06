@@ -3,7 +3,7 @@
 <div align="center">
   <h3>⚡ High-Performance Local Gateway for Google Antigravity, Anthropic Claude & OpenAI Models</h3>
   <p>
-    <img src="https://img.shields.io/badge/Python-3.10%2B-blue?style=for-the-badge&logo=python&logoColor=white" alt="Python 3.10+" />
+    <img src="https://img.shields.io/badge/uv-managed_env-blue?style=for-the-badge&logo=python&logoColor=white" alt="uv-managed environment" />
     <img src="https://img.shields.io/badge/FastAPI-0.115%2B-009688?style=for-the-badge&logo=fastapi&logoColor=white" alt="FastAPI" />
     <img src="https://img.shields.io/badge/License-MIT-10b981?style=for-the-badge" alt="MIT License" />
     <img src="https://img.shields.io/badge/OpenAI_API-Compatible-8b5cf6?style=for-the-badge" alt="OpenAI Compatible" />
@@ -49,7 +49,7 @@ flowchart TD
         WebUI["Open WebUI / LibreChat\n(Self-Hosted Interfaces)"]
     end
 
-    subgraph Bridge ["Model Bridge (FastAPI @ http://127.0.0.1:8000)"]
+    subgraph Bridge ["Model Bridge (FastAPI @ http://127.0.0.1:8765)"]
         Router["FastAPI Router\n(/v1/chat/completions, /v1/messages, /v1/files)"]
         Engine["Bridge Engine & Telemetry\n(Model Resolution, SSE Streaming, Quota Tracking)"]
         Router <--> Engine
@@ -88,12 +88,12 @@ flowchart TD
   - `GET /mcp/sse`: Server-Sent Events endpoint for MCP clients like Cursor.
   - `mcp_server.py`: Stdio adapter for Claude Desktop, Claude Code, and local agents to automate the active Autono browser session (`browser_task`, `browser_navigate`, `browser_click`, `browser_type`, `browser_screenshot`, `browser_get_active_tab`).
 - **Anthropic Claude Agent SDK Compatibility**:
-  - `POST /v1/messages`: Drop-in replacement for the official `anthropic-python` SDK (`base_url="http://127.0.0.1:8000"`).
+  - `POST /v1/messages`: Drop-in replacement for the official `anthropic-python` SDK (`base_url="http://127.0.0.1:8765"`).
   - `POST /v1/claude/agent`: Autonomous web automation agent execution with tool calling (click, type, navigate, screenshot).
   - Extended thinking / Chain-of-Thought token budget handling (`thinking: {"type": "enabled", "budget_tokens": ...}`).
 - **Dual Runtime Modes**:
   - **Modern Blue GUI**: Centered, high-clarity desktop interface with live start/stop button, 3 provider cards (Claude Code, Anti Gravity, Codex CLI) with dynamic **Activated** status detection, and real-time metrics.
-  - **Headless Server**: Run in continuous server/CI mode using `python main.py --headless`.
+  - **Headless Server**: Run in continuous server/CI mode using `uv run main.py --headless`.
 - **CORS Enabled**: Configured for local cross-origin browser extensions, local webapps, and sandboxes.
 - **Zero Paid Key Requirement**: Uses your active local Antigravity authentication session when running in Local Terminal mode.
 
@@ -102,42 +102,44 @@ flowchart TD
 ## 📦 Prerequisites & Quick Start
 
 ### 1. Prerequisites
-- **Python 3.10+** installed on your system.
-- **Git** installed.
-- *(Optional)* [Google Antigravity CLI](https://antigravity.google) installed if utilizing local Antigravity execution.
+- **Windows 10/11** (the GUI and the one-click scripts) — headless mode also runs on Linux/macOS.
+- **No Python needed.** The installer uses [uv](https://docs.astral.sh/uv/) to create an isolated environment (`.venv`) with its own Python, so it never touches (or depends on) the Python installed on your system.
+- *(Optional)* [Google Antigravity CLI](https://antigravity.google) for local Antigravity execution (the installer sets it up for you).
 
-### 2. Installation
+### 2. Install (one command)
 
-```bash
-# Clone the repository
-git clone https://github.com/MatiasV3B/ModelBridge.git
-cd ModelBridge
-
-# Create and activate a virtual environment
-python -m venv .venv
-
-# On Windows:
-.venv\Scripts\activate
-
-# On Linux/macOS:
-source .venv/bin/activate
-
-# Install dependencies
-pip install -r requirements.txt
+```powershell
+irm https://raw.githubusercontent.com/MatiasV3B/ModelBridge/main/install.ps1 | iex
 ```
 
-### 3. Launching the Bridge
+This downloads the Bridge to `%LOCALAPPDATA%\AntigravityBridge`, installs `uv` if missing, builds the `.venv`, creates the Desktop / Start Menu shortcuts and launches it.
+
+Already cloned the repo? Double-click `Instalador-AntigravityBridge.bat` (or run `./install.ps1`).
+
+<details>
+<summary>Manual setup (Linux/macOS or advanced)</summary>
+
+```bash
+git clone https://github.com/MatiasV3B/ModelBridge.git
+cd ModelBridge
+uv sync                      # creates .venv with the pinned Python + locked dependencies
+uv run main.py --headless    # start the server
+```
+</details>
+
+### 3. Update
+
+Double-click `Actualizar-AntigravityBridge.bat` (or run `./update.ps1`). It stops the Bridge, pulls the latest code, runs `uv sync` (only installs what changed) and restarts it.
+
+### 4. Launching the Bridge
 
 #### Option A: Headless Mode (CLI / Server / Container)
 ```bash
-python main.py --headless --host 127.0.0.1 --port 8000
+uv run main.py --headless --host 127.0.0.1 --port 8765
 ```
 
 #### Option B: Windows GUI
-```powershell
-python main.py
-# Or double-click: Iniciar-AntigravityBridge.bat
-```
+Use the **Antigravity Bridge** shortcut, or double-click `Iniciar-AntigravityBridge.bat`.
 
 #### Option C: Silent Background Service (Windows)
 Double-click `Iniciar-Servicio-Fondo.bat` (to stop, run `Detener-Servicio-Fondo.bat`).
@@ -146,12 +148,12 @@ Double-click `Iniciar-Servicio-Fondo.bat` (to stop, run `Detener-Servicio-Fondo.
 
 ## 🔌 Client Integration Examples
 
-Once the server is running on `http://127.0.0.1:8000`:
+Once the server is running on `http://127.0.0.1:8765`:
 
 ### 1. Autono Browser Extension
 In the [Autono](https://github.com/MatiasV3B/Autono) side panel:
 - Open **Settings** → **Bridge Connection**.
-- Bridge URL: `http://127.0.0.1:8000`.
+- Bridge URL: `http://127.0.0.1:8765`.
 - Verify the green status indicator (`🟢 Bridge Connected`).
 
 ### 2. Python OpenAI SDK
@@ -159,7 +161,7 @@ In the [Autono](https://github.com/MatiasV3B/Autono) side panel:
 from openai import OpenAI
 
 client = OpenAI(
-    base_url="http://127.0.0.1:8000/v1",
+    base_url="http://127.0.0.1:8765/v1",
     api_key="sk-antigravity",  # Any non-empty string in Local Terminal mode
 )
 
@@ -182,7 +184,7 @@ for chunk in stream:
 from anthropic import Anthropic
 
 client = Anthropic(
-    base_url="http://127.0.0.1:8000",
+    base_url="http://127.0.0.1:8765",
     api_key="sk-antigravity",
 )
 
@@ -205,7 +207,7 @@ In your `config.json`:
       "title": "Antigravity Gemini 3.8",
       "provider": "openai",
       "model": "gemini-3.8-flash-medium",
-      "apiBase": "http://127.0.0.1:8000/v1",
+      "apiBase": "http://127.0.0.1:8765/v1",
       "apiKey": "sk-antigravity"
     }
   ]
@@ -214,7 +216,7 @@ In your `config.json`:
 
 ### 5. cURL Request
 ```bash
-curl http://127.0.0.1:8000/v1/chat/completions \
+curl http://127.0.0.1:8765/v1/chat/completions \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer sk-antigravity" \
   -d '{

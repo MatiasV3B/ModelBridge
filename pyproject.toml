@@ -1,0 +1,23 @@
+[project]
+name = "antigravity-bridge"
+version = "1.0.0"
+description = "Antigravity Bridge - OpenAI-compatible localhost gateway for Antigravity, Claude Code and Codex"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn>=0.30.0",
+    "customtkinter>=5.2.0",
+    "requests>=2.31.0",
+    "python-multipart>=0.0.9",
+    "pydantic>=2.7.0",
+    "pillow>=10.0.0",
+    "darkdetect>=0.8.0",
+    "google-antigravity>=0.1.16",
+    "pystray>=0.19.5",
+    "anthropic>=0.40.0",
+]
+
+# This is an application, not a library: uv only manages its environment (.venv + uv.lock).
+[tool.uv]
+package = false

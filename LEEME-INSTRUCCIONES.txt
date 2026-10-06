@@ -15,7 +15,7 @@ Haz doble clic en:
 
 Esto instalará automáticamente:
 - El CLI oficial de Antigravity (si no lo tienes)
-- Las librerías de Python necesarias
+- Un entorno aislado con todo lo necesario (usa uv; NO necesitas instalar Python)
 - Creará el icono "Antigravity Bridge" en tu Escritorio
 
 -----------------------------------------------------------
@@ -28,13 +28,19 @@ Una vez abierta la ventana, presiona el botón verde:
 👉 "▶ INICIAR BRIDGE"
 
 El bridge se activará en tu computadora en:
-http://localhost:8000/v1
+http://localhost:8765/v1
+
+-----------------------------------------------------------
+▶ PARA ACTUALIZAR
+-----------------------------------------------------------
+Haz doble clic en:
+👉 Actualizar-AntigravityBridge.bat
 
 -----------------------------------------------------------
 ▶ PASO 3: CONECTARLO A TUS PROGRAMAS
 -----------------------------------------------------------
 En Cursor IDE, LibreChat, Open WebUI, AnythingLLM, etc.:
-• URL Base: http://localhost:8000/v1
+• URL Base: http://localhost:8765/v1
 • API Key: sk-antigravity (o cualquier texto)
 • Modelo: gemini-3.8-flash-high (o claude-sonnet-4-6, gpt-4o)
 ===========================================================

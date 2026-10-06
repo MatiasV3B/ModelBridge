@@ -24,11 +24,15 @@ $FilesToCopy = @(
     "Iniciar-AntigravityBridge.vbs",
     "Iniciar-Servicio-Fondo.bat",
     "Detener-Servicio-Fondo.bat",
+    "Actualizar-AntigravityBridge.bat",
     "LEEME-INSTRUCCIONES.txt",
     "README.md",
     "main.py",
-    "requirements.txt",
-    "install.ps1"
+    "pyproject.toml",
+    "uv.lock",
+    ".python-version",
+    "install.ps1",
+    "update.ps1"
 )
 
 foreach ($f in $FilesToCopy) {
