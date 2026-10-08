@@ -6,6 +6,8 @@ import json
 import time
 import shutil
 import subprocess
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 from core.config import bridge_config
@@ -248,6 +250,7 @@ class ModelRegistry:
         }
         self._last_fetch_time: float = 0
         self._cache_duration: float = 300  # 5 minutes cache
+        self._refreshing = False
         self.refresh_models()
 
     def fetch_antigravity_models(self) -> List[Dict[str, str]]:
@@ -395,10 +398,15 @@ class ModelRegistry:
 
     def refresh_models(self) -> List[Dict[str, Any]]:
         """Force refresh the model list across all CLIs and aggregate thinking variants."""
-        agy_raw = self.fetch_antigravity_models()
+        # The three CLIs are slow to start (each can take several seconds): ask them at the same time
+        with ThreadPoolExecutor(max_workers=3) as pool:
+            f_agy = pool.submit(self.fetch_antigravity_models)
+            f_codex = pool.submit(self.fetch_codex_models)
+            f_claude = pool.submit(self.fetch_claude_models)
+            agy_raw, codex_raw, claude_raw = f_agy.result(), f_codex.result(), f_claude.result()
         agy_list = _aggregate_model_variants(agy_raw)
-        codex_list = _aggregate_model_variants(self.fetch_codex_models())
-        claude_list = _aggregate_model_variants(self.fetch_claude_models())
+        codex_list = _aggregate_model_variants(codex_raw)
+        claude_list = _aggregate_model_variants(claude_raw)
 
         antigravity_models = []
         claude_models = list(claude_list)
@@ -435,10 +443,32 @@ class ModelRegistry:
         self._last_fetch_time = time.time()
         return self._models
 
+    def _refresh_in_background(self) -> None:
+        """Refresh without making anyone wait (one refresh at a time)."""
+        if self._refreshing:
+            return
+        self._refreshing = True
+
+        def work() -> None:
+            try:
+                self.refresh_models()
+            except Exception:
+                pass
+            finally:
+                self._refreshing = False
+
+        threading.Thread(target=work, daemon=True, name="model-refresh").start()
+
     def get_models(self) -> List[Dict[str, Any]]:
-        """Get models, refreshing if cache expired."""
-        if time.time() - self._last_fetch_time > self._cache_duration or not self._models:
-            self.refresh_models()
+        """Get the cached models. An expired cache is refreshed in the background.
+
+        This is called for every chat request, from the server's event loop: running the CLIs here
+        (agy / codex / claude models, several seconds each) froze the whole server every few minutes.
+        """
+        if not self._models:
+            self.refresh_models()  # only the very first call, at startup
+        elif time.time() - self._last_fetch_time > self._cache_duration:
+            self._refresh_in_background()
         return self._models
 
     def resolve_model(self, requested_model: Optional[str], effort: Optional[str] = None) -> str:

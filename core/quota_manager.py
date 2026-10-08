@@ -2,6 +2,7 @@
 
 import sys
 import time
+import threading
 import subprocess
 from typing import Dict, Any, Optional
 from core.config import bridge_config
@@ -15,6 +16,8 @@ class QuotaManager:
         self._last_fetch_time: float = 0
         self._cache_ttl: float = 120.0  # 2 minutes cache
         self._fetching: bool = False
+        self._last_attempt: float = 0
+        self._lock = threading.Lock()
 
     def _default_quota(self) -> Dict[str, Any]:
         return {
@@ -36,10 +39,16 @@ class QuotaManager:
             "last_updated": int(time.time()),
         }
 
+    def _start_background_fetch(self) -> None:
+        """Ask the Antigravity CLI for the quota on a worker thread (one at a time)."""
+        with self._lock:
+            if self._fetching:
+                return
+            self._fetching = True
+        threading.Thread(target=self._background_fetch, daemon=True, name="quota-fetch").start()
+
     def _background_fetch(self):
-        if self._fetching:
-            return
-        self._fetching = True
+        """Runs `agy --print /usage` (can take 10 s). Only ever called from a worker thread, never from a request."""
         try:
             agy_path = bridge_config.agy_binary_path or "agy"
             extra_kwargs = {}
@@ -84,37 +93,27 @@ class QuotaManager:
         except Exception as e:
             print(f"Notice: Background quota fetch notice ({e})", file=sys.stderr)
         finally:
+            self._last_attempt = time.time()  # also after a failure, so a broken CLI is not asked again at once
             self._fetching = False
 
+    def _due(self, now: float) -> bool:
+        return now - max(self._last_fetch_time, self._last_attempt) >= self._cache_ttl
+
     def fetch_quota(self, force: bool = False) -> Dict[str, Any]:
-        """Fetch quota, using cache immediately if available and updating in background."""
+        """Return the cached quota at once; a stale or missing cache is refreshed in the background.
+
+        This runs inside request handlers. It used to run the CLI inline when nothing was cached, and with
+        the CLI slow or failing that froze the whole server (every /v1/models call ran it once per model).
+        """
         now = time.time()
-        if not force and self._cached_quota and (now - self._last_fetch_time < self._cache_ttl):
-            return self._cached_quota
-
-        # If cache exists but is older, trigger background refresh without blocking
-        import threading
-        if self._cached_quota:
-            if not self._fetching and (now - self._last_fetch_time >= self._cache_ttl):
-                t = threading.Thread(target=self._background_fetch, daemon=True)
-                t.start()
-            return self._cached_quota
-
-        # First run: run inline once
-        self._background_fetch()
+        if force or self._due(now):
+            self._start_background_fetch()
         return self._cached_quota or self._default_quota()
 
     def get_model_quota(self, model_id: str) -> Dict[str, Any]:
         """Get the live quota group for a specific model without blocking."""
         now = time.time()
-        if not self._cached_quota:
-            quota = self.fetch_quota(force=False)
-        else:
-            quota = self._cached_quota
-            if (now - self._last_fetch_time >= self._cache_ttl) and not self._fetching:
-                import threading
-                t = threading.Thread(target=self._background_fetch, daemon=True)
-                t.start()
+        quota = self.fetch_quota(force=False)
 
         mid = model_id.lower()
         if "claude" in mid or "gpt" in mid or "oss" in mid:

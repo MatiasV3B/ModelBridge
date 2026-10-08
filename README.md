@@ -236,6 +236,15 @@ curl http://127.0.0.1:8765/v1/chat/completions \
 | `/v1/responses` | `POST` | OpenAI Responses API format |
 | `/v1/messages` | `POST` | Anthropic Messages API format |
 | `/v1/claude/agent` | `POST` | Autonomous web task execution agent |
+| `/v1/tts/status` · `/v1/tts/voices?lang=es` | `GET` | Piper text-to-speech: engine state and the voice catalogue by language |
+| `/v1/tts/engine/install` · `/v1/tts/voices/download` · `/v1/tts/speak` | `POST` | Install the Piper engine (into `~/.antigravity_bridge/piper`, never into your Python), download a voice, or turn text into a WAV. Piper is GPL-3.0 and is installed only when you ask for it. |
+| `/v1/stt/status` | `GET` | Parakeet speech-to-text: engine and model state, download progress |
+| `/v1/stt/engine/install` · `/v1/stt/model/download` | `POST` | Install `onnx-asr` into `~/.antigravity_bridge/stt` (never into your Python) and download the int8 model (about 650 MB, CC-BY-4.0) |
+| `/v1/stt/transcribe` | `POST` | Body: a 16-bit PCM WAV. Returns `{text}`; English and Spanish are detected automatically |
+| `/v1/bridge/restart` | `POST` | Hard restart: closes this Bridge and any leftover of it, frees the port and starts a new one (also `Reiniciar-Servicio-Fondo.bat`) |
+| `/v1/update/status` | `GET` | Compares the installed Bridge and Autono with the latest commit on GitHub |
+| `/v1/update/bridge` · `/v1/update/extension` | `POST` | Apply the update (git pull, or the repo ZIP laid over a downloaded copy), then restart / reload |
+| `/v1/agents/run` | `POST` | Run several sub-agents in parallel, one CLI process each (streams `agent_start` / `agent_done` / `run_done` events); also under `/antigravity`, `/claude` and `/openai` |
 | `/v1/models` | `GET` | List all available models across providers |
 | `/v1/models/{model_id}` | `GET` | Retrieve specific model details and metrics |
 | `/v1/files` | `POST` | Upload images, documents, and code files |

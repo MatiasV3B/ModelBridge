@@ -12,7 +12,7 @@ import asyncio
 import subprocess
 from pathlib import Path
 from typing import List, Dict, Any, AsyncGenerator, Optional, Tuple
-from core.config import bridge_config
+from core.config import bridge_config, APP_DIR
 from core.model_registry import model_registry
 from core.file_store import file_store
 from claude_agent import claude_agent_executor
@@ -43,6 +43,16 @@ class RequestMetrics:
 
 
 metrics = RequestMetrics()
+
+# Claude Code and Codex are run as plain chat: an empty folder of their own (not this project, so they do
+# not read its files or wander into tool calls) and a limit on how long they may stay silent.
+CLI_IDLE_TIMEOUT = 600  # seconds without a single line of output
+
+
+def _chat_workdir() -> str:
+    path = APP_DIR / "chat_workdir"
+    path.mkdir(parents=True, exist_ok=True)
+    return str(path)
 
 
 def extract_content_and_files(messages: List[Dict[str, Any]]) -> Tuple[str, List[str]]:
@@ -636,6 +646,9 @@ class BridgeEngine:
             "exec",
             "--json",
             "--skip-git-repo-check",
+            "--ephemeral",
+            "--sandbox", "read-only",
+            "-C", _chat_workdir(),
             "-",
         ]
 
@@ -661,6 +674,7 @@ class BridgeEngine:
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
+            cwd=_chat_workdir(),
             **extra_kwargs,
         )
 
@@ -677,7 +691,12 @@ class BridgeEngine:
 
         in_thinking = False
         while True:
-            line_bytes = await process.stdout.readline()
+            try:
+                line_bytes = await asyncio.wait_for(process.stdout.readline(), timeout=CLI_IDLE_TIMEOUT)
+            except asyncio.TimeoutError:
+                process.kill()
+                yield (f"\n[Codex Error: no output for {CLI_IDLE_TIMEOUT}s, stopped]\n", None)
+                return
             if not line_bytes:
                 break
 
@@ -760,7 +779,11 @@ class BridgeEngine:
             "--output-format", "stream-json",
             "--verbose",
             "--include-partial-messages",
-            "--dangerously-skip-permissions",
+            # plain chat: no tools, no MCP servers, nothing saved, so it answers fast and cannot act on files
+            "--tools", "",
+            "--strict-mcp-config",
+            "--no-session-persistence",
+            "--disable-slash-commands",
         ]
 
         # Map or pass model if supported
@@ -792,8 +815,11 @@ class BridgeEngine:
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
+            cwd=_chat_workdir(),
             **extra_kwargs,
         )
+        stderr_task = asyncio.create_task(process.stderr.read())
+        produced = False
 
         try:
             prompt_bytes = prompt.encode("utf-8")
@@ -807,7 +833,12 @@ class BridgeEngine:
 
         in_thinking = False
         while True:
-            line_bytes = await process.stdout.readline()
+            try:
+                line_bytes = await asyncio.wait_for(process.stdout.readline(), timeout=CLI_IDLE_TIMEOUT)
+            except asyncio.TimeoutError:
+                process.kill()
+                yield (f"\n[Claude Code Error: no output for {CLI_IDLE_TIMEOUT}s, stopped]\n", None)
+                return
             if not line_bytes:
                 break
 
@@ -828,6 +859,11 @@ class BridgeEngine:
                         if delta.get("type") == "text_delta":
                             chunk_text = delta.get("text", "")
                             if chunk_text:
+                                if in_thinking:
+                                    # the reasoning is over: close it, otherwise the answer is swallowed by the thought block
+                                    yield ("</thought>\n\n", None)
+                                    in_thinking = False
+                                produced = True
                                 yield (chunk_text, None)
                         elif delta.get("type") == "thinking_delta":
                             thinking_text = delta.get("thinking", "")
@@ -854,6 +890,7 @@ class BridgeEngine:
                     if data.get("is_error"):
                         # e.g. unknown model / not logged in: show the real reason instead of an empty answer
                         err_text = str(data.get("result") or data.get("error") or "Error en Claude Code CLI")
+                        produced = True
                         yield (f"\n[Claude Code Error: {err_text}]\n", None)
                     usage = data.get("usage", {})
                     yield ("", {"usage": {
@@ -866,6 +903,7 @@ class BridgeEngine:
                         yield ("</thought>\n\n", None)
                         in_thinking = False
                     err_msg = data.get("message") or data.get("error", {}).get("message") or "Error en Claude Code CLI"
+                    produced = True
                     yield (f"\n[Claude Code Error: {err_msg}]\n", None)
 
             except json.JSONDecodeError:
@@ -879,6 +917,14 @@ class BridgeEngine:
             in_thinking = False
 
         await process.wait()
+        if not produced:
+            # No text at all: say why (bad model name, not logged in...) instead of returning an empty answer
+            try:
+                err = (await asyncio.wait_for(stderr_task, timeout=2)).decode("utf-8", errors="replace").strip()
+            except Exception:
+                err = ""
+            if err:
+                yield (f"\n[Claude Code Error: {err[:800]}]\n", None)
 
     async def _stream_sdk(
         self, prompt: str, model: str, attached_files: List[str]

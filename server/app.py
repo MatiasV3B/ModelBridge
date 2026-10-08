@@ -19,8 +19,22 @@ from server.routes_power import router as power_router, trigger_toast, ToastNoti
 from server.routes_code import router as code_router
 from server.routes_claude import router as claude_router
 from server.routes_mcp import router as mcp_router
+from server.routes_agents import router as agents_router
+from server.routes_tts import router as tts_router
+from server.routes_bridge import router as bridge_router
+from server.routes_stt import router as stt_router
 
 START_TIME = time.time()
+
+# Bumped whenever the extension relies on something newer in the Bridge (it warns when this is lower).
+# 2 = Claude reasoning-level fix, 3 = sub-agents endpoint, 4 = Claude/Codex run as plain chat (answers no longer hidden in the thought block), 5 = text-to-speech (Piper), 6 = hard restart (/v1/bridge/restart), 7 = updates from GitHub (/v1/update/*), 8 = speech-to-text (Parakeet, /v1/stt/*)
+API_LEVEL = 8
+
+
+def _mask_key(key):
+    """Show only whether a key exists and its last 4 characters."""
+    key = key or ""
+    return ("\u2022\u2022\u2022\u2022" + key[-4:]) if len(key) > 8 else ("\u2022\u2022\u2022\u2022" if key else "")
 
 app = FastAPI(
     title="Model Bridge (OpenAI, Claude Agent & MCP Server)",
@@ -46,6 +60,10 @@ app.include_router(mcp_router)
 app.include_router(responses_router)
 app.include_router(power_router)
 app.include_router(code_router)
+app.include_router(agents_router)
+app.include_router(tts_router)
+app.include_router(bridge_router)
+app.include_router(stt_router)
 
 # Include provider-specific endpoints: /{provider}/...
 # (e.g. /antigravity/v1/chat/completions, /claude/v1/chat/completions, /openai/v1/chat/completions)
@@ -53,6 +71,7 @@ for prov in ("antigravity", "claude", "cloud", "openai"):
     app.include_router(chat_router, prefix=f"/{prov}")
     app.include_router(models_router, prefix=f"/{prov}")
     app.include_router(responses_router, prefix=f"/{prov}")
+    app.include_router(agents_router, prefix=f"/{prov}")
     if prov in ("claude", "cloud", "antigravity"):
         app.include_router(claude_router, prefix=f"/{prov}")
 
@@ -66,6 +85,7 @@ async def health_check():
         "status": "online",
         "service": "Antigravity Bridge",
         "version": "1.0.0",
+        "api_level": API_LEVEL,
         "uptime_seconds": round(time.time() - START_TIME, 1),
         "default_model": bridge_config.default_model,
         "engine_mode": bridge_config.engine_mode,
@@ -120,9 +140,10 @@ async def get_bridge_config():
         "has_gemini_key": bool(bridge_config.gemini_api_key or os.environ.get("GEMINI_API_KEY")),
         "has_anthropic_key": bool(bridge_config.anthropic_api_key or os.environ.get("ANTHROPIC_API_KEY")),
         "has_openai_key": bool(bridge_config.openai_api_key or os.environ.get("OPENAI_API_KEY")),
-        "gemini_api_key": bridge_config.gemini_api_key or "",
-        "anthropic_api_key": bridge_config.anthropic_api_key or "",
-        "openai_api_key": bridge_config.openai_api_key or "",
+        # Never hand the keys themselves to whoever asks: any web page can reach this local server
+        "gemini_api_key": _mask_key(bridge_config.gemini_api_key),
+        "anthropic_api_key": _mask_key(bridge_config.anthropic_api_key),
+        "openai_api_key": _mask_key(bridge_config.openai_api_key),
         "default_model": bridge_config.default_model,
         "engine_mode": bridge_config.engine_mode,
     }
