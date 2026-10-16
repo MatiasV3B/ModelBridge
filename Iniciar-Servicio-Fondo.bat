@@ -1,8 +1,8 @@
 @echo off
 cd /d "%~dp0"
 
-if not exist ".venv\Scripts\pythonw.exe" (
-    powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0install.ps1" -NoLaunch
-)
-start "" ".venv\Scripts\pythonw.exe" main.py --headless
+call "%~dp0resolve-python.bat"
+if not exist "%PYW%" powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0install.ps1" -NoLaunch
+call "%~dp0resolve-python.bat"
+start "" "%PYW%" main.py --headless
 exit /b 0

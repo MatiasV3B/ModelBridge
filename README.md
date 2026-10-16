@@ -103,7 +103,7 @@ flowchart TD
 
 ### 1. Prerequisites
 - **Windows 10/11** (the GUI and the one-click scripts) — headless mode also runs on Linux/macOS.
-- **No Python needed.** The installer uses [uv](https://docs.astral.sh/uv/) to create an isolated environment (`.venv`) with its own Python, so it never touches (or depends on) the Python installed on your system.
+- **No Python needed in secure mode (the default).** The installer uses [uv](https://docs.astral.sh/uv/) to create an isolated environment (`.venv`) with its own Python, so it never touches (or depends on) the Python installed on your system. *Normal mode* instead uses the Python you already have (3.10+); see below.
 - *(Optional)* [Google Antigravity CLI](https://antigravity.google) for local Antigravity execution (the installer sets it up for you).
 
 ### 2. Install (one command)
@@ -115,6 +115,22 @@ irm https://raw.githubusercontent.com/MatiasV3B/ModelBridge/main/install.ps1 | i
 This downloads the Bridge to `%LOCALAPPDATA%\AntigravityBridge`, installs `uv` if missing, builds the `.venv`, creates the Desktop / Start Menu shortcuts and launches it.
 
 Already cloned the repo? Double-click `Instalador-AntigravityBridge.bat` (or run `./install.ps1`).
+
+#### Install modes
+
+| Mode | What it does | When to pick it |
+|---|---|---|
+| **Secure** (default, recommended) | Creates an isolated `.venv` with `uv` and its own Python. Nothing is added to your system Python. | Almost always. Removing the Bridge is deleting its folder. |
+| **Normal** | Installs the dependencies with plain `pip install --user` into the Python you already have. | You do not want `uv` / a second Python. It mixes packages with your own and can change versions you already have. |
+
+An interactive install asks which one you want. To choose without being asked:
+
+```powershell
+./install.ps1 -Mode normal                                   # or: -Mode secure
+$env:BRIDGE_INSTALL_MODE = 'normal'; irm https://raw.githubusercontent.com/MatiasV3B/ModelBridge/main/install.ps1 | iex
+```
+
+The choice is saved in `.install-mode` and the updater keeps using it. In normal mode the Python path is saved in `.python-path`, which every launcher (`Iniciar-*.bat`, `*.vbs`, `run.bat`) reads. To switch modes, run `./install.ps1 -Mode secure` (or `normal`) again.
 
 <details>
 <summary>Manual setup (Linux/macOS or advanced)</summary>

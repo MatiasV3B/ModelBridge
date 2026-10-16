@@ -27,8 +27,10 @@ echo.
 powershell -NoProfile -Command "$s = New-Object Net.Sockets.TcpClient; try { $s.Connect('127.0.0.1', 8765); $s.Close(); exit 0 } catch { exit 1 }" >nul 2>&1
 if %ERRORLEVEL% NEQ 0 (
     echo [i] Iniciando Antigravity Bridge en segundo plano...
-    if not exist "%~dp0.venv\Scripts\pythonw.exe" powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0install.ps1" -NoLaunch
-    start "" /b "%~dp0.venv\Scripts\pythonw.exe" "%~dp0main.py" --headless >nul 2>&1
+    call "%~dp0resolve-python.bat"
+    if not exist "%PYW%" powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0install.ps1" -NoLaunch
+    call "%~dp0resolve-python.bat"
+    start "" /b "%PYW%" "%~dp0main.py" --headless >nul 2>&1
     timeout /t 2 /nobreak >nul
 )
 

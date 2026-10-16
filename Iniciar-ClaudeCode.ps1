@@ -37,11 +37,18 @@ try {
 
 if (-not $isConnected) {
     Write-Host "[i] Iniciando Antigravity Bridge en segundo plano..." -ForegroundColor Gray
-    $VenvPythonw = Join-Path $PSScriptRoot ".venv\Scripts\pythonw.exe"
-    if (-not (Test-Path $VenvPythonw)) {
-        & (Join-Path $PSScriptRoot "install.ps1") -NoLaunch
+    # .venv (modo seguro) o el Python del sistema que guardo install.ps1 (modo normal)
+    function Get-BridgePythonw {
+        $saved = Join-Path $PSScriptRoot ".python-path"
+        if (Test-Path $saved) { return (Get-Content $saved -TotalCount 1).Trim() }
+        return Join-Path $PSScriptRoot ".venv\Scripts\pythonw.exe"
     }
-    Start-Process -FilePath $VenvPythonw -ArgumentList "main.py --headless" -WorkingDirectory $PSScriptRoot
+    $BridgePythonw = Get-BridgePythonw
+    if (-not (Test-Path $BridgePythonw)) {
+        & (Join-Path $PSScriptRoot "install.ps1") -NoLaunch
+        $BridgePythonw = Get-BridgePythonw
+    }
+    Start-Process -FilePath $BridgePythonw -ArgumentList "main.py --headless" -WorkingDirectory $PSScriptRoot
     Start-Sleep -Seconds 2
 }
 

@@ -2,14 +2,14 @@
 title Antigravity Bridge
 cd /d "%~dp0"
 
-:: Primera ejecucion: crear el entorno aislado (.venv) con uv
-if not exist ".venv\Scripts\pythonw.exe" (
-    echo Preparando Antigravity Bridge por primera vez...
-    powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0install.ps1" -NoLaunch
-)
+:: Primera ejecucion: preparar Python (entorno aislado con uv, o el Python del sistema en modo normal)
+call "%~dp0resolve-python.bat"
+if not exist "%PYW%" echo Preparando Antigravity Bridge por primera vez...
+if not exist "%PYW%" powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0install.ps1" -NoLaunch
+call "%~dp0resolve-python.bat"
 
-if exist ".venv\Scripts\pythonw.exe" (
-    start "" ".venv\Scripts\pythonw.exe" main.py
+if exist "%PYW%" (
+    start "" "%PYW%" main.py
     exit /b 0
 )
 
