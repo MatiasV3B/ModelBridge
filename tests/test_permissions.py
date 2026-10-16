@@ -1,6 +1,7 @@
 """Permission mode and hard limits of the Bridge (core/permissions.py and the routes that enforce them)."""
 
 import sys
+import json
 import subprocess
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -73,6 +74,94 @@ def test_engine_builds_the_cli_command_from_the_mode(monkeypatch, isolated_confi
     assert "--dangerously-skip-permissions" in asyncio.run(run("auto"))
     assert "--sandbox" in asyncio.run(run("ask"))
     assert "--sandbox" in asyncio.run(run("none"))
+
+
+# ---- a tool refused by the CLI must be explained, not return an empty answer ----
+
+# The result event `agy -p ... --sandbox` really printed when the model tried to run a command in ask mode.
+_DENIED_RESULT = json.dumps({"event": "result", "result": {
+    "conversation_id": "x", "status": "SUCCESS", "response": "", "num_turns": 1,
+    "denied_actions": [{"action": "command", "display_name": "RunCommand"}]}})
+
+
+def test_notice_is_empty_when_nothing_was_denied():
+    assert permissions.denied_actions_notice(None, "ask") == ""
+    assert permissions.denied_actions_notice([], "ask") == ""
+    assert permissions.denied_actions_notice([{"action": "", "display_name": " "}], "ask") == ""
+
+
+def test_notice_in_ask_mode_names_the_tool_and_says_how_to_allow_it():
+    text = permissions.denied_actions_notice([{"action": "command", "display_name": "RunCommand"}], "ask")
+    assert "RunCommand" in text
+    assert "Ask manually" in text and "Auto approve" in text and "permissions.allow" in text
+
+
+def test_notice_in_other_modes_does_not_tell_the_person_to_switch_mode():
+    text = permissions.denied_actions_notice([{"action": "command", "display_name": "RunCommand"}], "auto")
+    assert "RunCommand" in text
+    assert "Auto approve" not in text
+
+
+def test_notice_lists_each_tool_once_and_accepts_plain_strings():
+    text = permissions.denied_actions_notice(
+        [{"display_name": "RunCommand"}, {"display_name": "RunCommand"}, {"action": "write_file"}, "BrowserClick"], "ask")
+    assert text.count("RunCommand") == 1
+    assert "write_file" in text and "BrowserClick" in text
+
+
+class _FakeStream:
+    def __init__(self, lines):
+        self._lines = [(line + "\n").encode() for line in lines]
+
+    async def readline(self):
+        return self._lines.pop(0) if self._lines else b""
+
+
+class _FakeProcess:
+    def __init__(self, lines):
+        self.stdout = _FakeStream(lines)
+        self.stderr = _FakeStream([])
+
+    async def wait(self):
+        return 0
+
+
+def test_engine_explains_a_refused_tool_instead_of_answering_with_nothing(monkeypatch, isolated_config):
+    import asyncio
+    from core.bridge_engine import bridge_engine
+
+    async def fake_exec(*cmd, **kwargs):
+        return _FakeProcess([_DENIED_RESULT])
+
+    monkeypatch.setattr(bridge_engine.config, "agy_binary_path", sys.executable)
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", fake_exec)
+
+    async def run():
+        out = []
+        async for text, _result in bridge_engine._stream_cli("run a command", "gemini-3.8-flash-low", []):
+            out.append(text)
+        return "".join(out)
+
+    isolated_config.permission_mode = "ask"
+    text = asyncio.run(run())
+    assert "Blocked" in text and "RunCommand" in text and "Auto approve" in text
+
+
+def test_engine_adds_no_notice_when_nothing_was_denied(monkeypatch, isolated_config):
+    import asyncio
+    from core.bridge_engine import bridge_engine
+    ok_result = json.dumps({"event": "result", "result": {"status": "SUCCESS", "response": "OK"}})
+
+    async def fake_exec(*cmd, **kwargs):
+        return _FakeProcess([ok_result])
+
+    monkeypatch.setattr(bridge_engine.config, "agy_binary_path", sys.executable)
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", fake_exec)
+
+    async def run():
+        return "".join([t async for t, _ in bridge_engine._stream_cli("hi", "gemini-3.8-flash-low", [])])
+
+    assert "Blocked" not in asyncio.run(run())
 
 
 # ---- who may change the mode ----

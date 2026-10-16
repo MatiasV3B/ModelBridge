@@ -13,7 +13,7 @@ import subprocess
 from pathlib import Path
 from typing import List, Dict, Any, AsyncGenerator, Optional, Tuple
 from core.config import bridge_config, APP_DIR
-from core.permissions import agy_permission_flags
+from core.permissions import agy_permission_flags, denied_actions_notice
 from core.model_registry import model_registry
 from core.file_store import file_store
 from claude_agent import claude_agent_executor
@@ -615,6 +615,9 @@ class BridgeEngine:
                         yield ("</thought>\n\n", None)
                         in_thinking = False
                     result = data.get("result", {})
+                    notice = denied_actions_notice(result.get("denied_actions"), getattr(self.config, "permission_mode", None))
+                    if notice:
+                        yield (notice, None)
                     if result.get("status") == "ERROR":
                         err_text = result.get("error", "Error desconocido en Antigravity CLI")
                         yield (f"\n[Antigravity Error: {err_text}]\n", result)
