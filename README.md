@@ -280,7 +280,7 @@ curl http://127.0.0.1:8765/v1/chat/completions \
 
 | Mode | Antigravity CLI | Meaning |
 |---|---|---|
-| `ask` (default) | `--sandbox` | Nothing is approved on its own. A headless request cannot ask in the middle, so a tool that needs permission is refused and the answer says which one (`[Blocked: ...]`). |
+| `ask` (default) | `--sandbox` | Nothing outside the sandbox is approved on its own. A headless request cannot ask in the middle, so a tool that needs permission (opening links, deleting files) is refused and the answer says which one (`[Blocked: ...]`). It is **not** a read-only mode: safe actions inside the sandbox, such as writing a temporary file, still run without asking. |
 | `auto` | `--sandbox --dangerously-skip-permissions` | Every tool request is approved without asking. |
 | `none` | `--sandbox --dangerously-skip-permissions` | Same here; the extension also skips its own confirmation dialogs. |
 
