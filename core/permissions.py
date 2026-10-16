@@ -39,6 +39,29 @@ def agy_permission_flags(mode: Optional[str]) -> List[str]:
     return flags
 
 
+def denied_actions_notice(denied, mode: Optional[str]) -> str:
+    """Text for the person when the Antigravity CLI refused a tool.
+
+    Headless `agy -p` cannot ask anything in the middle of a request, so without --dangerously-skip-permissions it
+    auto-denies every tool that needs a permission and may finish with an empty answer. Without this text the
+    request just looks broken.
+    """
+    names: List[str] = []
+    for item in denied or []:
+        name = (item.get("display_name") or item.get("action") or "") if isinstance(item, dict) else str(item)
+        name = str(name).strip()
+        if name and name not in names:
+            names.append(name)
+    if not names:
+        return ""
+    what = ", ".join(names)
+    if normalize_mode(mode) == "ask":
+        return (f"\n[Blocked: Antigravity wanted to use {what}. In \"Ask manually\" mode nobody can be asked in the middle "
+                "of a request, so it was refused. To allow it, choose \"Auto approve\" in Autono Settings > Permissions, "
+                "or add an allow rule under permissions.allow in the Antigravity settings.json.]\n")
+    return f"\n[Blocked: Antigravity could not use {what}: the CLI refused it.]\n"
+
+
 def code_execution_policy(config_value: Optional[str] = None) -> str:
     """'isolated' only when explicitly set by the environment variable or the local config; anything else is off."""
     raw = os.environ.get("BRIDGE_CODE_EXECUTION") or config_value or CODE_OFF
