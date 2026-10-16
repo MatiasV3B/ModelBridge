@@ -123,6 +123,17 @@ async def test_unknown_mode_is_rejected(isolated_config):
     assert isolated_config.permission_mode == "ask"
 
 
+@pytest.mark.anyio
+async def test_api_config_cannot_change_the_permission_mode_or_code_policy(isolated_config):
+    async with _client() as c:
+        res = await c.post("/api/config", json={
+            "permission_mode": "none", "code_execution": "isolated", "allow_tool_execution": True,
+        }, headers={"Origin": "chrome-extension://abc"})
+    assert res.status_code == 200
+    assert isolated_config.permission_mode == "ask"
+    assert isolated_config.code_execution == "off"
+
+
 # ---- hard limit: the computer is never shut down or hibernated ----
 
 @pytest.mark.anyio
