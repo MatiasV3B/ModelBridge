@@ -100,6 +100,8 @@ class BridgeConfig:
     anthropic_api_key: Optional[str] = None
     openai_api_key: Optional[str] = None
     allow_tool_execution: bool = True
+    permission_mode: str = "ask"       # "ask" (default), "auto" or "none": see core/permissions.py
+    code_execution: str = "off"        # "off" (default) or "isolated": only changeable here, never over HTTP
     auto_start_bridge: bool = True
     minimize_to_tray: bool = True
     start_with_windows: bool = True

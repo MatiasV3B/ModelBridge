@@ -266,6 +266,31 @@ curl http://127.0.0.1:8765/v1/chat/completions \
 | `/v1/files` | `POST` | Upload images, documents, and code files |
 | `/v1/files` | `GET` | List active session files |
 | `/api/metrics` | `GET` | Live telemetry, request logs, and token counters |
+| `/api/permissions` | `GET` / `POST` | Permission mode (`ask` / `auto` / `none`) and the hard limits. Only the Autono extension (or a local tool with no browser `Origin`) can change it; a web page gets `403`. |
+| `/api/power/shutdown` | `POST` | Always `403`: the Bridge never shuts down or hibernates the computer (use `/api/power/sleep`) |
+| `/api/code/execute` | `POST` | `403` unless you turned code execution on locally (see below) |
+
+---
+
+## 🛡️ Permissions & safety
+
+> **Read this before using `auto` or `none`.** A model that can act on your computer can be steered by text it reads (a web page, a file, an email: *prompt injection*). With the prompts turned off, nobody stops it. Use these modes at your own risk: the authors are not responsible for what a model does on your machine. The limits below are what actually protects you, not this warning.
+
+**Permission mode** (set it from the Autono Settings tab, or `POST /api/permissions`; stored in `permission_mode` in `~/.antigravity_bridge/config.json`):
+
+| Mode | Antigravity CLI | Meaning |
+|---|---|---|
+| `ask` (default) | `--sandbox` | Nothing is approved on its own. |
+| `auto` | `--sandbox --dangerously-skip-permissions` | Every tool request is approved without asking. |
+| `none` | `--sandbox --dangerously-skip-permissions` | Same here; the extension also skips its own confirmation dialogs. |
+
+**Hard limits** (the same in every mode; none of them can be changed over HTTP, so a web page or an injected prompt cannot lift them):
+
+- The Antigravity CLI always runs with `--sandbox`.
+- The computer is never shut down or hibernated (`/api/power/shutdown` always answers `403`).
+- Code from `/api/code/execute` is **off**. To use it, set `"code_execution": "isolated"` in `config.json` (or `BRIDGE_CODE_EXECUTION=isolated`) on this computer. It then runs only Python or JavaScript, in an empty temporary folder, without your API keys, with a time limit; no shells. This is a best-effort isolation, not a security boundary: that code can still read the files your user can read.
+
+The Claude and Codex CLIs are already started without tools / with a read-only sandbox, whatever the mode.
 
 ---
 
