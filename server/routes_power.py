@@ -126,28 +126,16 @@ async def suspend_system():
 
 @router.post("/shutdown")
 async def shutdown_system(req: ShutdownRequest):
-    """Schedules a safe shutdown or hibernation."""
-    if sys.platform != "win32":
-        return {"status": "mock", "message": "Shutdown command is only executable on Windows."}
-
-    delay = max(0, req.delay_seconds or 30)
-    msg = req.message or "Antigravity Shadow: Finalizando tareas."
-
-    try:
-        if req.action == "hibernate":
-            cmd = ["shutdown", "/h"]
-        else:
-            cmd = ["shutdown", "/s", "/t", str(delay), "/c", msg]
-
-        subprocess.Popen(cmd, creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
-        return {
-            "status": "ok",
-            "action": req.action,
-            "delay_seconds": delay,
-            "message": f"Shutdown scheduled in {delay} seconds. Cancel anytime via /api/power/cancel-shutdown.",
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to schedule shutdown: {e}")
+    """Shutting down or hibernating the computer is a hard limit of the Bridge: it is refused in every
+    permission mode and cannot be switched on over HTTP (core/permissions.py). Use /api/power/sleep to suspend."""
+    raise HTTPException(
+        status_code=403,
+        detail={
+            "error": "blocked_by_policy",
+            "message": "The Bridge never shuts down or hibernates the computer, in any permission mode. "
+                       "Use /api/power/sleep to suspend it.",
+        },
+    )
 
 
 @router.post("/cancel-shutdown")

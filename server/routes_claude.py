@@ -8,7 +8,7 @@ import re
 from fastapi import APIRouter, Request, HTTPException
 from fastapi.responses import StreamingResponse, JSONResponse
 from pydantic import BaseModel
-from typing import List, Optional, Any, Dict, Tuple
+from typing import List, Optional, Any, Dict, Tuple, Union
 
 from claude_agent import claude_agent_executor, DEFAULT_CLAUDE_MODEL
 from core.config import bridge_config

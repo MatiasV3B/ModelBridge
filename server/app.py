@@ -23,12 +23,13 @@ from server.routes_agents import router as agents_router
 from server.routes_tts import router as tts_router
 from server.routes_bridge import router as bridge_router
 from server.routes_stt import router as stt_router
+from server.routes_permissions import router as permissions_router
 
 START_TIME = time.time()
 
 # Bumped whenever the extension relies on something newer in the Bridge (it warns when this is lower).
-# 2 = Claude reasoning-level fix, 3 = sub-agents endpoint, 4 = Claude/Codex run as plain chat (answers no longer hidden in the thought block), 5 = text-to-speech (Piper), 6 = hard restart (/v1/bridge/restart), 7 = updates from GitHub (/v1/update/*), 8 = speech-to-text (Parakeet, /v1/stt/*)
-API_LEVEL = 8
+# 2 = Claude reasoning-level fix, 3 = sub-agents endpoint, 4 = Claude/Codex run as plain chat (answers no longer hidden in the thought block), 5 = text-to-speech (Piper), 6 = hard restart (/v1/bridge/restart), 7 = updates from GitHub (/v1/update/*), 8 = speech-to-text (Parakeet, /v1/stt/*), 9 = permission mode and hard limits (/api/permissions)
+API_LEVEL = 9
 
 
 def _mask_key(key):
@@ -64,6 +65,7 @@ app.include_router(agents_router)
 app.include_router(tts_router)
 app.include_router(bridge_router)
 app.include_router(stt_router)
+app.include_router(permissions_router)
 
 # Include provider-specific endpoints: /{provider}/...
 # (e.g. /antigravity/v1/chat/completions, /claude/v1/chat/completions, /openai/v1/chat/completions)

@@ -13,6 +13,7 @@ import subprocess
 from pathlib import Path
 from typing import List, Dict, Any, AsyncGenerator, Optional, Tuple
 from core.config import bridge_config, APP_DIR
+from core.permissions import agy_permission_flags
 from core.model_registry import model_registry
 from core.file_store import file_store
 from claude_agent import claude_agent_executor
@@ -544,7 +545,8 @@ class BridgeEngine:
             "-p", prompt,
             "--model", model,
             "--output-format", "stream-json",
-            "--dangerously-skip-permissions",
+            # --sandbox always; --dangerously-skip-permissions only if the person chose auto / none (core/permissions.py)
+            *agy_permission_flags(getattr(self.config, "permission_mode", None)),
         ]
 
         if "-high" in model:

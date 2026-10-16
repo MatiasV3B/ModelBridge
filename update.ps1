@@ -5,7 +5,8 @@
     - Cierra el Bridge si esta corriendo (solo el de esta carpeta).
     - Si es un clon de git hace "git pull"; si no, descarga el ZIP de GitHub y lo superpone
       (sin tocar .env ni .venv).
-    - Ejecuta "uv sync": solo instala lo que cambio (rapido).
+    - Vuelve a preparar Python con install.ps1 y el MISMO modo con que se instalo (.install-mode):
+      seguro = "uv sync" en el .venv; normal = "pip install" en el Python del sistema. Solo instala lo que cambio.
     - Vuelve a iniciar el Bridge.
 #>
 
@@ -20,10 +21,15 @@ Set-Location $Dir
 
 Write-Host "=== Actualizando Antigravity Bridge ===" -ForegroundColor Cyan
 
-# 1. Cerrar el Bridge de esta carpeta
+# 1. Cerrar el Bridge de esta carpeta: el que corre con su .venv (modo seguro) y el que corre con el Python del
+#    sistema (modo normal), que se reconoce porque su linea de comandos apunta al main.py de esta carpeta
 $venvPrefix = (Join-Path $Dir ".venv") + "\"
+$mainPy = Join-Path $Dir "main.py"
 Get-CimInstance Win32_Process |
-    Where-Object { $_.ExecutablePath -and $_.ExecutablePath.StartsWith($venvPrefix, [System.StringComparison]::OrdinalIgnoreCase) } |
+    Where-Object {
+        ($_.ExecutablePath -and $_.ExecutablePath.StartsWith($venvPrefix, [System.StringComparison]::OrdinalIgnoreCase)) -or
+        ($_.CommandLine -and $_.CommandLine.IndexOf($mainPy, [System.StringComparison]::OrdinalIgnoreCase) -ge 0)
+    } |
     ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
 
 # 2. Actualizar el codigo
@@ -44,14 +50,17 @@ if ($hasGit) {
     Remove-Item $TmpZip, $TmpDir -Recurse -Force -ErrorAction SilentlyContinue
 }
 
-# 3. Sincronizar el entorno: install.ps1 reutiliza uv y solo instala lo que cambio
-Write-Host "[2/3] Sincronizando entorno (uv sync)..." -ForegroundColor Yellow
+# 3. Sincronizar Python: install.ps1 reutiliza el modo guardado (.install-mode) y solo instala lo que cambio
+Write-Host "[2/3] Sincronizando dependencias..." -ForegroundColor Yellow
 & (Join-Path $Dir "install.ps1") -NoLaunch
-if (-not (Test-Path (Join-Path $Dir ".venv\Scripts\pythonw.exe"))) { throw "No se pudo preparar el entorno." }
+$Pythonw = Join-Path $Dir ".venv\Scripts\pythonw.exe"
+$SavedPython = Join-Path $Dir ".python-path"
+if (Test-Path $SavedPython) { $Pythonw = (Get-Content $SavedPython -TotalCount 1).Trim() }
+if (-not (Test-Path $Pythonw)) { throw "No se pudo preparar el entorno." }
 
 # 4. Reiniciar
 if (-not $NoRestart) {
     Write-Host "[3/3] Iniciando Antigravity Bridge..." -ForegroundColor Yellow
-    Start-Process -FilePath (Join-Path $Dir ".venv\Scripts\pythonw.exe") -ArgumentList "`"$(Join-Path $Dir 'main.py')`"" -WorkingDirectory $Dir
+    Start-Process -FilePath $Pythonw -ArgumentList "`"$(Join-Path $Dir 'main.py')`"" -WorkingDirectory $Dir
 }
 Write-Host "[OK] Antigravity Bridge actualizado." -ForegroundColor Green

@@ -15,7 +15,11 @@ Haz doble clic en:
 
 Esto instalará automáticamente:
 - El CLI oficial de Antigravity (si no lo tienes)
-- Un entorno aislado con todo lo necesario (usa uv; NO necesitas instalar Python)
+- Dependencias de Python, segun el modo que elijas (el instalador te pregunta):
+    [1] MODO SEGURO (recomendado): un entorno aislado (usa uv; NO necesitas instalar
+        Python y no toca el que ya tienes).
+    [2] MODO NORMAL: usa pip con tu Python (3.10 o superior). Mas simple, pero mezcla
+        paquetes con los de tu Python.
 - Creará el icono "Antigravity Bridge" en tu Escritorio
 
 -----------------------------------------------------------
