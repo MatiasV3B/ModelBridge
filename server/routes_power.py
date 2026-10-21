@@ -11,6 +11,8 @@ from typing import Optional, List
 from pydantic import BaseModel
 from fastapi import APIRouter, HTTPException
 
+IS_MAC = sys.platform == "darwin"
+
 router = APIRouter(prefix="/api/power", tags=["Power & Shadow"])
 
 # Windows Execution State Flags
@@ -21,6 +23,7 @@ ES_AWAYMODE_REQUIRED = 0x00000040
 # In-memory state
 _keep_awake_active = False
 _pending_tasks = []
+_caffeinate = None  # macOS: the `caffeinate` process that keeps the Mac awake
 
 
 class ScheduleWakeRequest(BaseModel):
@@ -61,12 +64,18 @@ async def get_power_status():
             wake_timers_info = res.stdout.strip() if res.stdout else "No active wake timers"
         except Exception:
             wake_timers_info = "Unable to query powercfg"
+    elif IS_MAC:
+        try:
+            res = subprocess.run(["pmset", "-g", "sched"], capture_output=True, text=True, timeout=10)
+            wake_timers_info = res.stdout.strip() or "No active wake timers"
+        except Exception:
+            wake_timers_info = "Unable to query pmset"
 
     return {
         "platform": sys.platform,
         "is_windows": is_windows,
         "keep_awake_active": _keep_awake_active,
-        "away_mode_supported": is_windows,
+        "away_mode_supported": is_windows or IS_MAC,
         "wake_timers": wake_timers_info,
         "queued_shadow_tasks": len(_pending_tasks),
     }
@@ -75,7 +84,7 @@ async def get_power_status():
 @router.post("/prevent-sleep")
 async def prevent_sleep():
     """Enables Windows Away Mode / System Keep-Awake so tasks run without interruption."""
-    global _keep_awake_active
+    global _keep_awake_active, _caffeinate
     if sys.platform == "win32":
         try:
             # Set Away Mode & System Required continuously
@@ -86,6 +95,12 @@ async def prevent_sleep():
             return {"status": "ok", "message": "Away Mode enabled. System will remain active for tasks."}
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to set execution state: {e}")
+    elif IS_MAC:
+        if _caffeinate is None or _caffeinate.poll() is not None:
+            # -i: no idle sleep, -s: no system sleep on AC power, -w: ends by itself if the Bridge dies
+            _caffeinate = subprocess.Popen(["caffeinate", "-i", "-s", "-w", str(os.getpid())])
+        _keep_awake_active = True
+        return {"status": "ok", "message": "caffeinate enabled. The Mac will remain awake for tasks."}
     else:
         _keep_awake_active = True
         return {"status": "ok", "message": "Keep-awake simulated for non-Windows platform."}
@@ -94,7 +109,7 @@ async def prevent_sleep():
 @router.post("/release-sleep")
 async def release_sleep():
     """Releases Keep-Awake state, allowing normal system sleep."""
-    global _keep_awake_active
+    global _keep_awake_active, _caffeinate
     if sys.platform == "win32":
         try:
             ctypes.windll.kernel32.SetThreadExecutionState(ES_CONTINUOUS)
@@ -102,6 +117,12 @@ async def release_sleep():
             return {"status": "ok", "message": "Normal power state restored."}
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Failed to reset execution state: {e}")
+    elif IS_MAC:
+        if _caffeinate is not None and _caffeinate.poll() is None:
+            _caffeinate.terminate()
+        _caffeinate = None
+        _keep_awake_active = False
+        return {"status": "ok", "message": "Normal power state restored."}
     else:
         _keep_awake_active = False
         return {"status": "ok", "message": "Released."}
@@ -110,6 +131,12 @@ async def release_sleep():
 @router.post("/sleep")
 async def suspend_system():
     """Puts the computer into sleep / suspend mode."""
+    if IS_MAC:
+        try:
+            subprocess.Popen(["pmset", "sleepnow"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            return {"status": "ok", "message": "Sleep state initiated."}
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Failed to sleep system: {e}")
     if sys.platform != "win32":
         return {"status": "mock", "message": "Sleep command is only executable on Windows."}
 
@@ -158,7 +185,9 @@ async def cancel_shutdown():
 
 @router.post("/schedule-wake")
 async def schedule_wake(req: ScheduleWakeRequest):
-    """Configures a Windows RTC Wake Alarm via PowerShell TaskScheduler."""
+    """Configures a Windows RTC Wake Alarm via PowerShell TaskScheduler (pmset on macOS)."""
+    if IS_MAC:
+        return await asyncio.to_thread(_schedule_wake_mac, req)
     if sys.platform != "win32":
         return {"status": "mock", "message": "Wake timers are only supported natively on Windows."}
 
@@ -189,6 +218,23 @@ async def schedule_wake(req: ScheduleWakeRequest):
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to program wake alarm: {e}")
+
+
+def _schedule_wake_mac(req: ScheduleWakeRequest) -> dict:
+    """`pmset schedule wake` needs root: it goes through the macOS admin prompt (osascript)."""
+    from datetime import timedelta
+    minutes = req.delay_minutes or 2
+    when = (datetime.now() + timedelta(minutes=minutes)).strftime("%m/%d/%y %H:%M:%S")
+    script = f'do shell script "pmset schedule wake \\"{when}\\"" with administrator privileges'
+    res = subprocess.run(["osascript", "-e", script], capture_output=True, text=True, timeout=120)
+    if res.returncode != 0:
+        raise HTTPException(status_code=500, detail=f"Failed to program wake alarm: {res.stderr.strip()}")
+    return {
+        "status": "ok",
+        "message": f"Wake alarm programmed for +{minutes} minutes from now (pmset).",
+        "task_name": req.task_name or "Antigravity_Shadow_Wake",
+        "minutes": minutes,
+    }
 
 
 class ToastNotificationRequest(BaseModel):
@@ -280,6 +326,10 @@ if ($notifier) {{
 @router.post("/notify")
 async def trigger_toast(req: ToastNotificationRequest):
     """Triggers an OS-native Windows toast notification directly outside of the browser sandbox."""
+    if IS_MAC:
+        from core import macos
+        asyncio.create_task(asyncio.to_thread(macos.notify, req.title or "Model Bridge", req.message))
+        return {"status": "ok", "message": "Native macOS notification triggered."}
     if sys.platform != "win32":
         return {"status": "mock", "message": "Toast notifications are only supported natively on Windows."}
 

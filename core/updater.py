@@ -126,6 +126,9 @@ def _chrome_profiles():
         os.path.join(local, "BraveSoftware", "Brave-Browser", "User Data"),
         os.path.join(local, "Microsoft", "Edge", "User Data"),
         os.path.join(home, "Library", "Application Support", "Google", "Chrome"),
+        os.path.join(home, "Library", "Application Support", "Google", "Chrome Beta"),
+        os.path.join(home, "Library", "Application Support", "BraveSoftware", "Brave-Browser"),
+        os.path.join(home, "Library", "Application Support", "Microsoft Edge"),
         os.path.join(home, ".config", "google-chrome"),
         os.path.join(home, ".config", "chromium"),
     ]
@@ -201,6 +204,8 @@ def _overlay(zf: zipfile.ZipFile, inner: str, dest: str, skip=()) -> int:
         os.makedirs(os.path.dirname(target), exist_ok=True)
         with zf.open(member) as src, open(target, "wb") as out:
             shutil.copyfileobj(src, out)
+        if rel.endswith((".sh", ".command")):
+            os.chmod(target, 0o755)  # the ZIP drops the exec bit the macOS launchers need
         written += 1
     return written
 

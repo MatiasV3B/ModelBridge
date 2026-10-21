@@ -26,6 +26,7 @@ from tkinter import filedialog, messagebox
 import customtkinter as ctk
 from PIL import Image, ImageDraw
 
+from core import macos
 from core.config import bridge_config, FILES_DIR, set_windows_startup, is_windows_startup_enabled
 from core.bridge_engine import metrics
 from core.model_registry import model_registry
@@ -35,9 +36,12 @@ from server.app import server_manager
 
 try:
     import pystray
-    PYSTRAY_AVAILABLE = True
+    # On macOS pystray must own the main thread, which Tk already has: closing the window minimizes to the Dock.
+    PYSTRAY_AVAILABLE = not macos.IS_MAC
 except ImportError:
     PYSTRAY_AVAILABLE = False
+
+AGY_NAME = "agy" if macos.IS_MAC else "agy.exe"
 
 # Paths & Real App Logos
 ASSETS_DIR = Path(__file__).resolve().parent / "assets"
@@ -630,6 +634,9 @@ class ModelBridgeGUI(ctk.CTk):
             # If already activated, launch terminal directly
             if key == "claude":
                 self._launch_claude_code_terminal()
+            elif macos.IS_MAC:
+                exe = (bridge_config.agy_binary_path or "agy") if key == "antigravity" else (find_codex_binary() or "codex")
+                macos.open_terminal(macos.login_shell_command(exe))
             elif key == "antigravity":
                 agy_path = bridge_config.agy_binary_path or "agy"
                 cmd = f'start "Antigravity CLI Terminal" cmd /k "\"{agy_path}\""'
@@ -644,13 +651,16 @@ class ModelBridgeGUI(ctk.CTk):
         cmd = login_command(key)
         if not cmd:
             if key == "antigravity":
-                messagebox.showerror("Error", "No se encontró el ejecutable de Antigravity CLI (agy.exe). Configura la ruta en Configuración.")
+                messagebox.showerror("Error", f"No se encontró el ejecutable de Antigravity CLI ({AGY_NAME}). Configura la ruta en Configuración.")
             else:
                 messagebox.showerror("Error", f"No se encontró el ejecutable para {title}. Instálalo o agrégalo a tu PATH.")
             return
 
         # Launch login process in terminal (which auto-closes via cmd /c upon completion)
-        subprocess.Popen(cmd, shell=True)
+        if macos.IS_MAC:
+            macos.open_terminal(cmd)
+        else:
+            subprocess.Popen(cmd, shell=True)
 
         # Open in-app auto-confirming modal
         LoginSessionModal(
@@ -980,7 +990,7 @@ class ModelBridgeGUI(ctk.CTk):
             btn_p.pack(side="left", padx=2)
 
         # Card 2: Rutas de Ejecutables
-        c2 = self._create_settings_card(scroll, "⚡ Ruta de Antigravity CLI (agy.exe)")
+        c2 = self._create_settings_card(scroll, f"⚡ Ruta de Antigravity CLI ({AGY_NAME})")
         cli_row = ctk.CTkFrame(c2, fg_color="transparent")
         cli_row.pack(fill="x", padx=16, pady=(10, 14))
 
@@ -1041,7 +1051,7 @@ class ModelBridgeGUI(ctk.CTk):
         self.var_tray = ctk.BooleanVar(value=bridge_config.minimize_to_tray)
         ctk.CTkCheckBox(
             sys_inner,
-            text="Minimizar a la bandeja del sistema al cerrar",
+            text="Minimizar al Dock al cerrar" if macos.IS_MAC else "Minimizar a la bandeja del sistema al cerrar",
             variable=self.var_tray,
             text_color=PALETTE["text_main"],
             fg_color=PALETTE["accent_blue"]
@@ -1050,7 +1060,8 @@ class ModelBridgeGUI(ctk.CTk):
         self.var_startup = ctk.BooleanVar(value=is_windows_startup_enabled())
         ctk.CTkCheckBox(
             sys_inner,
-            text="Iniciar con Windows al encender el equipo (24/7)",
+            text=("Iniciar con macOS al encender el equipo (24/7)" if macos.IS_MAC
+                  else "Iniciar con Windows al encender el equipo (24/7)"),
             variable=self.var_startup,
             text_color=PALETTE["text_main"],
             fg_color=PALETTE["accent_blue"],
@@ -1090,7 +1101,10 @@ class ModelBridgeGUI(ctk.CTk):
         return card
 
     def _browse_cli_path(self):
-        f = filedialog.askopenfilename(title="Seleccionar ejecutable agy.exe", filetypes=[("Executable", "*.exe")])
+        if macos.IS_MAC:
+            f = filedialog.askopenfilename(title="Seleccionar ejecutable agy")
+        else:
+            f = filedialog.askopenfilename(title="Seleccionar ejecutable agy.exe", filetypes=[("Executable", "*.exe")])
         if f:
             self.entry_cli_path.delete(0, "end")
             self.entry_cli_path.insert(0, f)
@@ -1214,6 +1228,14 @@ class ModelBridgeGUI(ctk.CTk):
         if not server_manager.is_running:
             self.toggle_bridge()
 
+        if macos.IS_MAC:
+            script = Path(__file__).resolve().parent.parent / "Iniciar-ClaudeCode.sh"
+            if script.exists():
+                macos.open_terminal(f"/bin/bash {macos.login_shell_command(str(script))}")
+            else:
+                macos.open_terminal(f"export ANTHROPIC_BASE_URL=http://{bridge_config.host}:{bridge_config.port} "
+                                    f"ANTHROPIC_API_KEY=sk-antigravity; claude")
+            return
         bat_path = Path(__file__).resolve().parent.parent / "Iniciar-ClaudeCode.bat"
         if bat_path.exists():
             subprocess.Popen(f'start "" "{bat_path}"', shell=True)
@@ -1263,7 +1285,9 @@ class ModelBridgeGUI(ctk.CTk):
         self.after(0, self._force_quit)
 
     def _on_close_window(self):
-        if bridge_config.minimize_to_tray and PYSTRAY_AVAILABLE:
+        if bridge_config.minimize_to_tray and macos.IS_MAC:
+            self.iconify()
+        elif bridge_config.minimize_to_tray and PYSTRAY_AVAILABLE:
             self.withdraw()
             if self.tray_icon and not self.tray_icon.visible:
                 threading.Thread(target=self.tray_icon.run, daemon=True).start()
