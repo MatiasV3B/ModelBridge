@@ -250,7 +250,11 @@ In your `config.json`:
 }
 ```
 
-### 5. cURL Request
+### 5. Zylo Chat / Zylo Code
+Settings → BYOK → add a provider with Base URL `http://127.0.0.1:8765/v1` (no API key needed), then **Fetch models**.
+Tool calling works: the Bridge turns the app's `tools` into a prompt and the model's answer back into OpenAI `tool_calls`, so subagents, `read_file` and code edits run as usual. If Chrome asks to allow access to devices on your local network, allow it.
+
+### 6. cURL Request
 ```bash
 curl http://127.0.0.1:8765/v1/chat/completions \
   -H "Content-Type: application/json" \

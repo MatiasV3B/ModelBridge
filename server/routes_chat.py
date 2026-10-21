@@ -6,6 +6,7 @@ from fastapi import APIRouter, Request, HTTPException
 from fastapi.responses import StreamingResponse, JSONResponse
 from pydantic import BaseModel, Field
 from typing import List, Optional, Any, Dict, Union
+from core import client_tools
 from core.bridge_engine import bridge_engine
 
 router = APIRouter(tags=["Chat Completions"])
@@ -33,16 +34,19 @@ class ChatCompletionRequest(BaseModel):
         extra = "allow"
 
 
-async def sse_event_generator(req_data: ChatCompletionRequest, **kwargs):
+async def sse_event_generator(req_data: ChatCompletionRequest, use_tools: bool = False, **kwargs):
     """Generate Server-Sent Events for streaming chat completions."""
     try:
-        async for chunk in bridge_engine.generate_stream(
+        chunks = bridge_engine.generate_stream(
             messages=req_data.messages,
             model=req_data.model,
             temperature=req_data.temperature,
             max_tokens=req_data.max_tokens,
             **kwargs
-        ):
+        )
+        if use_tools:
+            chunks = client_tools.stream_with_tools(chunks)
+        async for chunk in chunks:
             payload = f"data: {json.dumps(chunk)}\n\n"
             yield payload.encode("utf-8")
 
@@ -75,6 +79,12 @@ async def create_chat_completion(request: Request):
 
     if not req_data.messages:
         raise HTTPException(status_code=400, detail="Missing required parameter 'messages'")
+
+    # Client-side tools (Zylo Chat / Zylo Code, OpenAI SDK apps): see core/client_tools.py
+    tools = body.get("tools") or [{"type": "function", "function": f} for f in body.get("functions") or []]
+    tool_choice = body.get("tool_choice", "auto")
+    use_tools = client_tools.wants_tools(tools, tool_choice)
+    req_data.messages = client_tools.prepare_messages(req_data.messages, tools, tool_choice)
 
     claude_mode = request.headers.get("x-claude-mode") or body.get("claude_mode")
     antigravity_mode = request.headers.get("x-antigravity-mode") or body.get("antigravity_mode")
@@ -111,7 +121,7 @@ async def create_chat_completion(request: Request):
     # Streaming mode
     if req_data.stream:
         return StreamingResponse(
-            sse_event_generator(req_data, **forward_kwargs),
+            sse_event_generator(req_data, use_tools=use_tools, **forward_kwargs),
             media_type="text/event-stream",
             headers={
                 "Cache-Control": "no-cache",
@@ -130,6 +140,8 @@ async def create_chat_completion(request: Request):
             max_tokens=req_data.max_tokens,
             **forward_kwargs
         )
+        if use_tools:
+            result = client_tools.apply_to_completion(result)
         return JSONResponse(content=result)
     except Exception as e:
         logger.error(f"Chat completion error: {e}")

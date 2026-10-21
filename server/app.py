@@ -1,6 +1,7 @@
 """FastAPI application setup and server lifecycle manager."""
 
 import asyncio
+import inspect
 import time
 import uvicorn
 import threading
@@ -44,13 +45,12 @@ app = FastAPI(
 )
 
 # Enable CORS for all local web clients (LibreChat, Open WebUI, browser extensions, etc.)
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+_cors = dict(allow_origins=["*"], allow_credentials=True, allow_methods=["*"], allow_headers=["*"])
+# https web apps (Zylo Chat, Zylo Code) calling http://127.0.0.1 send a Private Network Access preflight.
+# Older Starlette (normal install mode, user's own packages) does not know this option.
+if "allow_private_network" in inspect.signature(CORSMiddleware.__init__).parameters:
+    _cors["allow_private_network"] = True
+app.add_middleware(CORSMiddleware, **_cors)
 
 # Include standard root routers (for backward compatibility and general clients)
 app.include_router(models_router)
