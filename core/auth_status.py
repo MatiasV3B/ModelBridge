@@ -15,6 +15,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Optional, Tuple
 
+from core import macos
 from core.config import bridge_config
 
 NO_WINDOW = subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
@@ -86,6 +87,8 @@ def find_codex_binary() -> Optional[str]:
     exe = shutil.which("codex") or shutil.which("codex.cmd") or shutil.which("codex.exe")
     if exe and os.path.exists(exe):
         return exe
+    if macos.IS_MAC:
+        return macos.find_bin("codex")
 
     local_app_data = os.environ.get("LOCALAPPDATA")
     candidates = []
@@ -184,7 +187,20 @@ def check_all() -> Dict[str, ProviderStatus]:
 
 
 def login_command(key: str) -> Optional[str]:
-    """Windows `start` command line that opens a terminal with the login flow and auto-closes when done."""
+    """Windows `start` command line that opens a terminal with the login flow and auto-closes when done.
+
+    On macOS it is the shell command for Terminal.app instead (run it with core.macos.open_terminal)."""
+    if macos.IS_MAC:
+        if key == "claude":
+            return macos.login_shell_command(shutil.which("claude") or "claude", "auth", "login", auto_close=True)
+        if key == "antigravity":
+            agy = bridge_config.agy_binary_path
+            if not agy or not os.path.exists(agy):
+                return None
+            return macos.login_shell_command(agy, auto_close=True)
+        if key == "codex":
+            return macos.login_shell_command(find_codex_binary() or "codex", "login", auto_close=True)
+        return None
     if key == "claude":
         exe = shutil.which("claude") or "claude"
         return f'start "Claude Code - Iniciar sesion" cmd /c ""{exe}" auth login & echo Autenticacion completada con exito. Cerrando... & timeout /t 2 >nul"'
@@ -204,6 +220,12 @@ def login_command(key: str) -> Optional[str]:
 
 def install_command(key: str) -> Optional[str]:
     """Terminal command (shown to the user) that installs a missing CLI."""
+    if macos.IS_MAC:
+        mac_commands = {
+            "claude": "curl -fsSL https://claude.ai/install.sh | bash",
+            "codex": "npm install -g @openai/codex",
+        }
+        return mac_commands.get(key)
     commands = {
         "claude": "winget install Anthropic.ClaudeCode",
         "codex": "npm install -g @openai/codex",

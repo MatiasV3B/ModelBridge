@@ -102,7 +102,7 @@ flowchart TD
 ## 📦 Prerequisites & Quick Start
 
 ### 1. Prerequisites
-- **Windows 10/11** (the GUI and the one-click scripts) — headless mode also runs on Linux/macOS.
+- **Windows 10/11** or **macOS 12+** (GUI and one-click scripts on both) — headless mode also runs on Linux.
 - **No Python needed in secure mode (the default).** The installer uses [uv](https://docs.astral.sh/uv/) to create an isolated environment (`.venv`) with its own Python, so it never touches (or depends on) the Python installed on your system. *Normal mode* instead uses the Python you already have (3.10+); see below.
 - *(Optional)* [Google Antigravity CLI](https://antigravity.google) for local Antigravity execution (the installer sets it up for you).
 
@@ -115,6 +115,26 @@ irm https://raw.githubusercontent.com/MatiasV3B/ModelBridge/main/install.ps1 | i
 This downloads the Bridge to `%LOCALAPPDATA%\AntigravityBridge`, installs `uv` if missing, builds the `.venv`, creates the Desktop / Start Menu shortcuts and launches it.
 
 Already cloned the repo? Double-click `Instalador-AntigravityBridge.bat` (or run `./install.ps1`).
+
+#### macOS
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/MatiasV3B/ModelBridge/main/install.sh | bash
+```
+
+Installs to `~/Library/Application Support/AntigravityBridge`, sets up `agy` and `uv`, builds the `.venv` and creates **Model Bridge.app** in `~/Applications` (Launchpad / Spotlight). Same modes: `bash install.sh --mode normal` or `BRIDGE_INSTALL_MODE=normal`.
+
+| Windows | macOS |
+|---|---|
+| `Iniciar-AntigravityBridge.bat` | `Iniciar-AntigravityBridge.command` |
+| `Iniciar-Servicio-Fondo.bat` / `Detener-…` / `Reiniciar-…` | `Iniciar-Servicio-Fondo.command` / `Detener-…` / `Reiniciar-…` |
+| `Actualizar-AntigravityBridge.bat` / `update.ps1` | `Actualizar-AntigravityBridge.command` / `update.sh` |
+| `Iniciar-ClaudeCode.bat` / `.ps1` | `Iniciar-ClaudeCode.command` / `.sh` |
+| Start with Windows (Startup shortcut) | Start with macOS (LaunchAgent `~/Library/LaunchAgents/com.matiasv3b.modelbridge.plist`) |
+| Tray icon | Closing the window minimizes it to the Dock |
+| Away Mode / `powercfg` / toast | `caffeinate` / `pmset` / Notification Center |
+
+Scheduling a wake (`/api/power/schedule-wake`) uses `pmset schedule wake`, which needs your admin password (macOS asks for it).
 
 #### Install modes
 

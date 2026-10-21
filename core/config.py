@@ -8,6 +8,11 @@ from pathlib import Path
 from dataclasses import dataclass, asdict
 from typing import Optional
 
+from core import macos
+
+if macos.IS_MAC:
+    macos.extend_path()
+
 APP_DIR = Path.home() / ".antigravity_bridge"
 CONFIG_FILE = APP_DIR / "config.json"
 FILES_DIR = APP_DIR / "files"
@@ -23,6 +28,8 @@ def find_agy_binary() -> str:
     which_path = shutil.which("agy") or shutil.which("agy.exe")
     if which_path and os.path.exists(which_path):
         return which_path
+    if macos.IS_MAC:
+        return macos.find_bin("agy") or "agy"
 
     # Check Windows LocalAppData
     local_app_data = os.environ.get("LOCALAPPDATA")
@@ -44,6 +51,8 @@ def find_claude_binary() -> str:
     which_path = shutil.which("claude") or shutil.which("claude.cmd") or shutil.which("claude.exe")
     if which_path and os.path.exists(which_path):
         return which_path
+    if macos.IS_MAC:
+        return macos.find_bin("claude") or "claude"
 
     local_app_data = os.environ.get("LOCALAPPDATA")
     candidates = []
@@ -67,6 +76,8 @@ def find_codex_binary() -> str:
     which_path = shutil.which("codex") or shutil.which("codex.cmd") or shutil.which("codex.exe")
     if which_path and os.path.exists(which_path):
         return which_path
+    if macos.IS_MAC:
+        return macos.find_bin("codex") or "codex"
 
     local_app_data = os.environ.get("LOCALAPPDATA")
     candidates = []
@@ -149,7 +160,10 @@ bridge_config = BridgeConfig.load()
 
 
 def set_windows_startup(enabled: bool):
-    """Enable or disable auto-starting with Windows via Startup shortcut."""
+    """Enable or disable auto-starting with Windows via Startup shortcut (a LaunchAgent on macOS)."""
+    if macos.IS_MAC:
+        macos.set_login_item(enabled)
+        return
     startup_dir = Path(os.environ.get("APPDATA", "")) / "Microsoft" / "Windows" / "Start Menu" / "Programs" / "Startup"
     if not startup_dir.exists():
         return
@@ -184,6 +198,8 @@ def set_windows_startup(enabled: bool):
 
 
 def is_windows_startup_enabled() -> bool:
+    if macos.IS_MAC:
+        return macos.is_login_item_enabled()
     startup_dir = Path(os.environ.get("APPDATA", "")) / "Microsoft" / "Windows" / "Start Menu" / "Programs" / "Startup"
     return (startup_dir / "Antigravity Bridge.lnk").exists()
 
